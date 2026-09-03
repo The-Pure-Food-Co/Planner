@@ -1,10 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseBrowserClient } from './supabase/browser-singleton'
 import type { PlannerData, Workspace, Lane, Task, KpiGroup, LaneTemplate, Member, WorkspaceMembership, Role, SavedView, UiState, ActivityLogEntry, AppNotification, NotificationType, NotificationPrefs, Todo } from './types'
 
-const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim()
-const key = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '').trim()
-
-export const supabase = url && key ? createClient(url, key) : null
+// A single shared client, created via @supabase/ssr's createBrowserClient (see
+// ./supabase/client.ts) so this app's data layer and its proxy.ts/auth-callback
+// session handling read/write the exact same GoTrueClient instance and storage
+// key — two separate clients on the same key ("Multiple GoTrueClient instances
+// detected") silently race and can make a just-established session invisible
+// to this module.
+export const supabase = getSupabaseBrowserClient()
 
 // supabase-js builders are lazy — the request is only sent once the builder is
 // awaited/then'd, so a discarded builder is a silent no-op. Fire-and-forget
