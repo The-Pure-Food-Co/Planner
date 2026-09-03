@@ -1,7 +1,21 @@
--- Consolidated schema for the standalone Pure Planner Supabase project.
--- Run this once in Supabase Dashboard -> SQL Editor (or via scripts/setup-db.js)
--- against a fresh project. Replaces the 40+ incremental migrations that built
--- up this shape inside the original shared "Gantt" hub project.
+-- Reference schema for Planner's tables. These tables already exist and are
+-- populated in the SHARED org Supabase project (purefoods-planner / Gantt,
+-- ref rzenewwvbtxadhhgzrnf) — this app was extracted from that hub app but
+-- deliberately kept on its shared Supabase project (auth AND data), matching
+-- every other internal app's convention (see CLAUDE.md and the sibling repos'
+-- AGENTS.md/README.md: one shared Supabase project, each app owns its own
+-- tables/tenant within it).
+--
+-- Do NOT run this against the shared project — it already has this shape.
+-- It exists so this repo has a record of Planner's own tables/policies/
+-- functions independent of the Gantt repo's migration history, and so
+-- `scripts/setup-db.js` can bootstrap a fresh LOCAL/dev Postgres instance
+-- (via `create table if not exists`, safe to no-op against the real one too).
+-- When changing the schema: verify the live shape first
+-- (`information_schema.columns` on the shared project), then apply a
+-- targeted additive change there directly (Supabase SQL Editor), and mirror
+-- it here plus in `lib/types.ts` + the `rowToX`/`xToDb` mappers in
+-- `lib/supabase.ts`.
 
 create extension if not exists pg_cron;
 

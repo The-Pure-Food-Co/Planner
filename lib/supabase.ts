@@ -18,48 +18,8 @@ export function fireAndForget(q: PromiseLike<{ error: unknown }> | undefined, la
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
-
-export async function signInWithMicrosoft() {
-  if (!supabase) return
-  // Preserve any query string across the OAuth round trip — Supabase appends
-  // the session tokens as a hash fragment onto whatever redirectTo URL we
-  // pass, keeping any query string on it intact.
-  const search = window.location.search
-  // Identity + own-profile, plus GroupMember.Read.All so AuthGate can check the
-  // signed-in user's own group memberships (NZ Team gating) via Graph /me/memberOf.
-  // `User.Read` lets us read the signed-in user's own photo via Graph. The roster
-  // is provisioned just-in-time from each user's OAuth identity (see plannerStore.init
-  // → linkOwnProfile), so no directory-wide Graph permission is needed.
-  await supabase.auth.signInWithOAuth({
-    provider: 'azure',
-    options: { scopes: 'email profile openid User.Read GroupMember.Read.All', redirectTo: `${window.location.origin}/${search}` },
-  })
-}
-
-// Checks whether the signed-in user (via their delegated Graph token) belongs to
-// the given Entra ID group. Uses /me/memberOf (paginated) rather than
-// /me/checkMemberGroups — the latter doesn't reliably support distribution
-// groups (NZ Team is a Distribution group, not security-enabled), while
-// memberOf lists all group types the user belongs to. Returns false on any
-// failure so a Graph hiccup fails closed (blocks access) rather than open.
-export async function isMemberOfGroup(providerToken: string, groupId: string): Promise<boolean> {
-  try {
-    let url: string | undefined = 'https://graph.microsoft.com/v1.0/me/memberOf?$select=id'
-    while (url) {
-      const nextUrl: string = url
-      const res: Response = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${providerToken}` },
-      })
-      if (!res.ok) return false
-      const data: { value?: { id?: string }[]; ['@odata.nextLink']?: string } = await res.json()
-      if (data.value?.some((g) => g.id === groupId)) return true
-      url = data['@odata.nextLink']
-    }
-    return false
-  } catch {
-    return false
-  }
-}
+// Sign-in itself happens on the shared Auth Hub (proxy.ts redirects there when
+// there's no session) — this app never runs its own OAuth flow.
 
 // Fetch the signed-in user's own Microsoft profile photo as a base64 data URL.
 // Uses the delegated OAuth access token (session.provider_token), which Supabase only

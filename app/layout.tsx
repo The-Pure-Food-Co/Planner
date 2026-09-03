@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 import './globals.css'
-import AuthGate from '@/components/AuthGate'
 import { AuthProvider } from '@/lib/auth'
 
 const gilroy = localFont({
@@ -34,6 +33,11 @@ export const metadata: Metadata = {
   description: 'TPFC Apps',
 }
 
+// No client-side auth gate here — proxy.ts already redirects any
+// unauthenticated request to the shared Auth Hub before this layout ever
+// renders (see CLAUDE.md), so every route under it can assume a signed-in
+// user. AuthProvider still wraps children so useAuthUser()/useMe() can read
+// that user's identity (display name, email) for the UI.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={gilroy.variable}>
@@ -45,9 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <AuthProvider>
-          <AuthGate>{children}</AuthGate>
-        </AuthProvider>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   )
