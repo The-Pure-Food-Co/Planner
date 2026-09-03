@@ -1,0 +1,48 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Next.js
+/.next/
+/out/
+
+# Production
+/build
+
+# Env
+.env*.local
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Local env files
+.env
+.vercel
+
+# Playwright MCP scratch output
+.playwright-mcp/
+
+
+node_modules
+dist
+build
+*.min.js
+
+# Locally-installed agent skills (machine-local tooling, not app code)
+.agents/skills/
+skills-lock.json
+
+# Machine-local session/editor state
+.claude/scheduled_tasks.lock
+*.bak

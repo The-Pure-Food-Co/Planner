@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="The Pantry">
+  <!-- Pantry doors reduced for small sizes: no panel lines or handles, just
+       two door shapes and the seam. The earlier version kept the full
+       illustration and turned to mush at 16px — at favicon size the "P" has
+       to be the mark, with the doors reading as a frame around it. -->
+  <defs>
+    <linearGradient id="doors" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#93328E"/>
+      <stop offset="0.55" stop-color="#C63663"/>
+      <stop offset="1" stop-color="#F8485E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Two doors, seam left as a transparent gutter down the middle -->
+  <g fill="url(#doors)">
+    <rect x="40" y="40" width="200" height="432" rx="28"/>
+    <rect x="272" y="40" width="200" height="432" rx="28"/>
+  </g>
+
+  <!-- "P" knocked straight out of the doors: one counter, heavy stem, sized
+       to span the seam so it holds together as a single silhouette. -->
+  <path d="M170 130h104c62 0 100 37 100 92s-38 94-100 94h-40v66h-64zM234 186v74h34c24 0 38-14 38-37s-14-37-38-37z"
+        fill="#FFFFFF"/>
+</svg>
