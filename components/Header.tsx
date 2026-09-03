@@ -1,5 +1,4 @@
 'use client'
-import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { usePlannerStore } from '@/store/plannerStore'
 import { useMyRole } from '@/lib/permissions'
@@ -21,7 +20,7 @@ import {
 import Avatar from '@/components/Avatar'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationSettings from '@/components/modals/NotificationSettings'
-import { Building2, LogOut, ListTodo, Camera, BellRing, Search, type LucideIcon } from 'lucide-react'
+import { Building2, LogOut, ListTodo, Camera, BellRing, Search, ArrowLeft, type LucideIcon } from 'lucide-react'
 import { taskAssignedTo } from '@/lib/utils'
 
 interface Props {
@@ -34,6 +33,8 @@ const GLOBAL_PAGES: Array<{ id: PrimaryTab; label: string; Icon: LucideIcon }> =
   { id: 'mywork', label: 'My work', Icon: ListTodo },
   { id: 'teams', label: 'Workspaces', Icon: Building2 },
 ]
+
+const HUB_URL = process.env.NEXT_PUBLIC_AUTH_HUB_URL
 
 export default function Header({ onSearch }: Props) {
   const { data, ui, setUi, saveUi, live, updateMyAvatar } = usePlannerStore()
@@ -63,7 +64,15 @@ export default function Header({ onSearch }: Props) {
     <>
       <header>
         <div className="hdr-top" data-astryx-theme="neutral">
-          <Link href="/" style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textDecoration: 'none', fontWeight: 600, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>← Apps</Link>
+          {HUB_URL && (
+            <IconButton
+              variant="ghost"
+              className="hdr-back"
+              label="Back to Pantry"
+              icon={<ArrowLeft size={16} strokeWidth={1.75} />}
+              onClick={() => { window.location.href = HUB_URL }}
+            />
+          )}
           <Button variant="ghost" className="hdr-home" label="All workspaces" onClick={() => setTab('teams')}>
             <span className="logo-block" style={{ width: 34, height: 34, borderRadius: 9, fontSize: 14 }}>P</span>
             <span style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap' }}>Pure Planner</span>

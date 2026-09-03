@@ -458,6 +458,20 @@ header > * {
   line-height: 1;
   color: #fff;
 }
+.hdr-back {
+  color: rgba(255, 255, 255, 0.75);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.hdr-back:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
 .me-btn {
   border: 2px solid rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.1);
