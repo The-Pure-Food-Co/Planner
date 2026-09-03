@@ -20,6 +20,7 @@ import WorkspaceEditor from '@/components/modals/WorkspaceEditor'
 import WorkstreamsEditor from '@/components/modals/WorkstreamsEditor'
 import NewWorkspaceModal from '@/components/modals/NewWorkspaceModal'
 import type { Task, Lane, Workspace } from '@/lib/types'
+import AppAccessGate from '@/components/AppAccessGate'
 import { Skeleton } from '@astryxdesign/core/Skeleton'
 import { Stack } from '@astryxdesign/core/Stack'
 
@@ -271,5 +272,9 @@ function PlannerInner() {
 }
 
 export default function Home() {
-  return <PlannerInner />
+  return (
+    <AppAccessGate appKey="planner">
+      <PlannerInner />
+    </AppAccessGate>
+  )
 }

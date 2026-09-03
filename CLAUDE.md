@@ -11,7 +11,7 @@ Always create a new branch before committing or pushing to the remote — never 
 - `pnpm dev` (or `npm run dev`) — start Next.js dev server
 - `pnpm build` — production build
 - `pnpm start` — run production build
-- `node scripts/setup-db.js` — apply `supabase/schema.sql` to the Postgres instance pointed to by `POSTGRES_URL_NON_POOLING` in `.env` (idempotent statement-by-statement runner)
+- `node scripts/setup-db.js` — applies `supabase/schema.sql` to the Postgres instance pointed to by `POSTGRES_URL_NON_POOLING` in `.env` (idempotent statement-by-statement runner). Only needed against a fresh/local Postgres instance — the shared org project already has this schema; do not run this against it casually.
 
 Tests: `pnpm test` runs the vitest suite in `tests/` (pure logic only — diff helpers, notification fan-out, due-date bucketing, row mappers; no UI tests). No lint script is configured. Package manager is pnpm (`pnpm-lock.yaml`, `pnpm-workspace.yaml`).
 
@@ -19,7 +19,15 @@ Env vars live in `.env.local` (see `.env.example` for the full Supabase/Postgres
 
 ## Architecture
 
-This is a Next.js 14 App Router app: Team Planner (Gantt/board/KPIs) for The Pure Food Co. It was extracted from a shared multi-tool "hub" app (`Gantt`) into its own standalone app and Supabase project — the hub links to it as an external tile (cross-app SSO no longer applies; this app has its own independent Supabase Auth).
+This is a Next.js 14 App Router app: Team Planner (Gantt/board/KPIs) for The Pure Food Co. It was extracted from a shared multi-tool "hub" app (`Gantt`) into its own standalone repo/deploy, but — matching the convention used by every other internal app (see `Planning-Private`/`OnHolds-Private`'s `AGENTS.md`/`README.md`) — it stays on the **same shared Supabase project** as the hub (`purefoods-planner`, ref `rzenewwvbtxadhhgzrnf`) for both auth and data. There is no per-app Supabase project; each app just owns its own tables/tenant (RLS-scoped) within that one database.
+
+### Auth (shared Auth Hub SSO)
+
+This app has no sign-in screen of its own. `proxy.ts` runs on every request (except `/auth/callback`), checks the Supabase session via `lib/supabase/middleware.ts`, and if there's no session, redirects to `NEXT_PUBLIC_AUTH_HUB_URL` (the Gantt hub) with `redirect_app`/`redirect_to` query params. The hub authenticates the user (Microsoft/Azure OAuth) and redirects back to `/auth/callback?next=<path>`, which reads the access/refresh tokens out of the URL fragment and calls `supabase.auth.setSession()`. `lib/auth.tsx`'s `AuthProvider`/`useAuthUser()` (used app-wide for display name/identity, not gating) reads the resulting session — see `lib/supabase/browser-singleton.ts` for the module-level client that degrades to `null` when env vars are missing (local/seed mode, no persistence).
+
+For this app's own origin to be handed a session at all, it must be registered in the hub's `trusted_apps` table (Supabase Table Editor on the shared project — no in-app admin UI, see `PureHub-and-Planner/Gantt/lib/supabase.ts`'s `isTrustedRedirectApp` and `supabase/migrations/024_trusted_apps.sql` there).
+
+Per-app authorization on top of the hub session: `components/AppAccessGate.tsx` (wrapping `app/page.tsx`, keyed `"planner"` — must match this app's `hub_apps.id` row) + `lib/useAppAccess.ts`/`lib/appAccess.ts` layer a second, independent restriction using the shared `app_access` table. A missing row means unrestricted; a row means only the listed `profiles` ids may open the app. Access grants are managed from the hub's own "Manage apps" modal, not from this repo.
 
 ### Planner data flow
 
@@ -32,7 +40,7 @@ Persistence/sync model (`lib/supabase.ts`):
 - Realtime: `subscribeToChanges()` opens one Supabase Realtime channel (`planner-live`) subscribed to postgres_changes on all five tables and merges incoming events into store state, so concurrent users' edits appear live. Only one subscription is kept at module scope (`unsubRealtime`).
 - Row shape in Postgres differs from the in-app `Task`/`Lane`/`Workspace` shape (e.g. `lane_id` vs `lane`, snake_case columns); `rowToX`/`xToDb` mapper pairs in `lib/supabase.ts` are the only place that translation happens — extend both when adding a field.
 
-Auth: Microsoft/Azure OAuth via Supabase (`signInWithMicrosoft`), gated app-wide by `components/AuthGate.tsx`/`lib/auth.tsx`'s `AuthProvider` wrapping `children` in the root layout (`app/layout.tsx`) — so every route requires sign-in before rendering. `useAuthUser` is available anywhere under the root layout. The user roster is provisioned just-in-time from each user's own OAuth identity: on `plannerStore.init()`, `db.linkOwnProfile` upserts the signed-in user's `profiles` row and their display name is mirrored into the legacy `userList` roster the pickers read. There is no Microsoft Graph directory sync — the roster is exactly the set of people who have signed in (plus any names added manually in the Users panel).
+Auth gating itself is `proxy.ts` (see "Auth" above), not a component — `lib/auth.tsx`'s `AuthProvider` wrapping `children` in the root layout (`app/layout.tsx`) only exposes the already-established session's identity via `useAuthUser`, available anywhere under the root layout. The user roster is provisioned just-in-time from each user's own OAuth identity: on `plannerStore.init()`, `db.linkOwnProfile` upserts the signed-in user's `profiles` row and their display name is mirrored into the legacy `userList` roster the pickers read. There is no Microsoft Graph directory sync — the roster is exactly the set of people who have signed in (plus any names added manually in the Users panel).
 
 ### Planner UI structure
 
@@ -40,7 +48,7 @@ Auth: Microsoft/Azure OAuth via Supabase (`signInWithMicrosoft`), gated app-wide
 
 ### Database schema
 
-`supabase/schema.sql` is the canonical, consolidated schema (tables, functions, RLS policies, storage bucket, pg_cron job, realtime publication) for this app's own standalone Supabase project — apply it fresh via `scripts/setup-db.js`. When changing the schema, edit this file directly and mirror the change in `lib/types.ts` + the `rowToX`/`xToDb` mappers in `lib/supabase.ts`.
+`supabase/schema.sql` documents Planner's tables/functions/policies/storage bucket/pg_cron job/realtime publication as they exist on the shared Supabase project — it does **not** need to be (and should not be) run against that project, since the tables already exist there. See its header comment for how to make schema changes safely against a database several other apps also depend on.
 
 ### Styling
 

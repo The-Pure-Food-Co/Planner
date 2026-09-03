@@ -290,8 +290,6 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           // identity + roles resolve. The roster is everyone who's signed in plus anyone
           // pre-provisioned via addPerson — no Microsoft Graph directory sync. avatarUrl
           // is omitted when empty so a tokenless reload never wipes a stored photo.
-          // is_nz_team is NOT written here — AuthGate.tsx owns that check (it runs
-          // before this store loads, via Graph on fresh sign-in) so it isn't clobbered.
           await db.linkOwnProfile({
             authId: u.id,
             email: u.email,
