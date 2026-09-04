@@ -81,7 +81,7 @@ export default function Header({ onSearch }: Props) {
             <IconButton
               variant="ghost"
               className="hdr-back"
-              label="Back to Pantry"
+              label="Back to hub"
               icon={<ArrowLeft size={16} strokeWidth={1.75} />}
               onClick={() => { window.location.href = HUB_URL }}
             />
@@ -124,7 +124,7 @@ export default function Header({ onSearch }: Props) {
               <Button
                 variant="ghost"
                 size="sm"
-                className={`gnav-link gws-link${ui.page === 'ws' && ui.ws === jumpWs.id ? ' active' : ''}`}
+                className={`gnav-link gws-link${tab !== 'mywork' && tab !== 'teams' ? ' active' : ''}`}
                 label={jumpWs.name}
                 onClick={() => openWs(jumpWs.id)}
               />
