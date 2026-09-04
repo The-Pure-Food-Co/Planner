@@ -643,11 +643,11 @@ function PersonalTodo({ meId }: { meId: string | null }) {
 
   return (
     <Stack
-      gap={3}
-      className="bg-white h-full p-6"
-      style={{ borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-low)', minWidth: 0 }}
+      gap={0}
+      className="bg-white"
+      style={{ borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-low)', minWidth: 0, height: '100%', minHeight: 0, overflow: 'hidden' }}
     >
-      <Stack gap={4}>
+      <Stack gap={4} style={{ flex: '0 0 auto', padding: '24px 24px 0' }}>
         <Stack direction="horizontal" gap={2} align="center" justify="between">
           <Heading level={1}>Checklist</Heading>
           {meId && !todosLoading && todos.length > 0 && (
@@ -663,7 +663,7 @@ function PersonalTodo({ meId }: { meId: string | null }) {
       </Stack>
 
       {!todosLoading && todos.length > 0 && (
-        <>
+        <Stack gap={3} style={{ flex: '0 0 auto', padding: '0 24px' }}>
           <Divider />
           <Stack direction="horizontal" gap={2} wrap="wrap" align="center" justify="between">
             <SegmentedControl label="Filter to-dos" value={filter} onChange={(v) => setFilter(v as TodoFilter)} size="sm">
@@ -686,9 +686,10 @@ function PersonalTodo({ meId }: { meId: string | null }) {
               ]}
             />
           </Stack>
-        </>
+        </Stack>
       )}
 
+      <Stack gap={3} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 24 }}>
       {todosLoading ? (
         <TodoListSkeleton />
       ) : todos.length === 0 ? (
@@ -781,7 +782,7 @@ function PersonalTodo({ meId }: { meId: string | null }) {
           )}
         </>
       )}
-
+      </Stack>
     </Stack>
   )
 }
@@ -848,11 +849,11 @@ export default function MyWork({ onOpenTask }: Props) {
   }
 
   return (
-    <div className="page" style={{ display: 'flex' }}>
-      <Stack data-astryx-theme="neutral" gap={5} style={{ margin: '0 auto', width: '100%', minHeight: '100%' }}>
+    <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Stack data-astryx-theme="neutral" gap={5} style={{ margin: '0 auto', width: '100%', flex: '1 1 auto', minHeight: 0 }}>
         <Grid columns={2} gap={6} style={{ flex: 1, minHeight: 0 }}>
-          <GridSpan columns={1} className="bg-white rounded-md h-full p-6 shadow-sm">
-            <Stack gap={5}>
+          <GridSpan columns={1} className="bg-white rounded-md shadow-sm" style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <Stack gap={5} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 24 }}>
               <Stack gap={4}>
                 <Heading level={1}>My work</Heading>
                 {allRows.length === 0 ? (
@@ -991,7 +992,7 @@ export default function MyWork({ onOpenTask }: Props) {
             </Stack>
           </GridSpan>
 
-          <GridSpan columns={1}>
+          <GridSpan columns={1} style={{ height: '100%', minHeight: 0 }}>
             <PersonalTodo meId={meId} />
           </GridSpan>
         </Grid>

@@ -1,5 +1,4 @@
 'use client'
-import Link from 'next/link'
 import { useRef, useState } from 'react'
 import { usePlannerStore } from '@/store/plannerStore'
 import { useMyRole } from '@/lib/permissions'
@@ -21,7 +20,8 @@ import {
 import Avatar from '@/components/Avatar'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationSettings from '@/components/modals/NotificationSettings'
-import { Building2, LogOut, ListTodo, Camera, BellRing, Search, type LucideIcon } from 'lucide-react'
+import { ButtonGroup } from '@astryxdesign/core/ButtonGroup'
+import { LogOut, ListTodo, Camera, BellRing, Search, ArrowLeft, ChevronDown, LayoutGrid, type LucideIcon } from 'lucide-react'
 import { taskAssignedTo } from '@/lib/utils'
 
 interface Props {
@@ -32,11 +32,12 @@ interface Props {
 // People and KPIs are hidden for now — see planner page.tsx / SearchPalette for the matching guards.
 const GLOBAL_PAGES: Array<{ id: PrimaryTab; label: string; Icon: LucideIcon }> = [
   { id: 'mywork', label: 'My work', Icon: ListTodo },
-  { id: 'teams', label: 'Workspaces', Icon: Building2 },
 ]
 
+const HUB_URL = process.env.NEXT_PUBLIC_AUTH_HUB_URL
+
 export default function Header({ onSearch }: Props) {
-  const { data, ui, setUi, saveUi, live, updateMyAvatar } = usePlannerStore()
+  const { data, ui, setUi, saveUi, live, updateMyAvatar, openWs } = usePlannerStore()
   const onlineIds = usePlannerStore(s => s.onlineIds)
   const authUser = useAuthUser()
   const { meId, me, myName } = useMe()
@@ -45,6 +46,19 @@ export default function Header({ onSearch }: Props) {
 
   const curWs = data.workspaces.find(w => w.id === ui.ws) ?? data.workspaces[0]
   const myRole = useMyRole(curWs?.id ?? null)
+
+  // Workspaces the user can actually navigate into: real membership in live
+  // mode, everything in local/seed mode (no server to scope against — see
+  // lib/permissions.ts's resolveRole, which grants full access the same way).
+  const isAppAdmin = !live || !!data.members.find(m => m.id === meId)?.isAppAdmin
+  const myWorkspaces = isAppAdmin
+    ? data.workspaces
+    : data.workspaces.filter(w => data.memberships.some(m => m.workspaceId === w.id && m.userId === meId))
+
+  // Defaults to the most recently visited workspace (ui.ws, already persisted
+  // by openWs) so the button target survives reloads, falling back to the
+  // first workspace the user has access to.
+  const jumpWs = (myWorkspaces.find(w => w.id === ui.ws) ?? myWorkspaces[0]) ?? null
 
   const roleLabel = live
     ? (me?.isAppAdmin ? 'App admin' : myRole === 'admin' ? 'Workspace admin' : myRole === 'member' ? 'Member' : 'Viewer')
@@ -63,9 +77,31 @@ export default function Header({ onSearch }: Props) {
     <>
       <header>
         <div className="hdr-top" data-astryx-theme="neutral">
-          <Link href="/" style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textDecoration: 'none', fontWeight: 600, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>← Apps</Link>
+          {HUB_URL && (
+            <IconButton
+              variant="ghost"
+              className="hdr-back"
+              label="Back to Pantry"
+              icon={<ArrowLeft size={16} strokeWidth={1.75} />}
+              onClick={() => { window.location.href = HUB_URL }}
+            />
+          )}
           <Button variant="ghost" className="hdr-home" label="All workspaces" onClick={() => setTab('teams')}>
-            <span className="logo-block" style={{ width: 34, height: 34, borderRadius: 9, fontSize: 14 }}>P</span>
+            <svg width="34" height="34" viewBox="0 0 512 512" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+              <defs>
+                <linearGradient id="hdr-logo-tile" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#93328E" />
+                  <stop offset="0.55" stopColor="#C63663" />
+                  <stop offset="1" stopColor="#F8485E" />
+                </linearGradient>
+              </defs>
+              <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#hdr-logo-tile)" />
+              <rect x="120" y="146" width="272" height="240" rx="32" fill="#fff" />
+              <path d="M120 178a32 32 0 0 1 32-32h208a32 32 0 0 1 32 32v34H120z" fill="#943152" />
+              <rect x="168" y="112" width="28" height="56" rx="14" fill="#fff" />
+              <rect x="316" y="112" width="28" height="56" rx="14" fill="#fff" />
+              <path d="M182 288l48 48 100-104" fill="none" stroke="#943152" strokeWidth="34" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             <span style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap' }}>Pure Planner</span>
           </Button>
 
@@ -82,6 +118,45 @@ export default function Header({ onSearch }: Props) {
               />
             ))}
           </nav>
+
+          {jumpWs && (
+            <ButtonGroup label="Jump to workspace" className="gws">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`gnav-link gws-link${ui.page === 'ws' && ui.ws === jumpWs.id ? ' active' : ''}`}
+                label={jumpWs.name}
+                onClick={() => openWs(jumpWs.id)}
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      className="gnav-link gws-chevron"
+                      label="Choose a workspace"
+                      icon={<ChevronDown size={14} strokeWidth={1.75} />}
+                    />
+                  }
+                />
+                <DropdownMenuContent align="start" className="min-w-[200px]">
+                  <DropdownMenuGroup>
+                    {myWorkspaces.map(w => (
+                      <DropdownMenuItem key={w.id} onClick={() => openWs(w.id)}>
+                        {w.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setTab('teams')}>
+                    <LayoutGrid size={14} strokeWidth={1.75} />
+                    View all workspaces
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
+          )}
 
           {/* "Search anything" global search is hidden for now — re-enable by
               uncommenting this button. onSearch/SearchPalette wiring is untouched. */}
