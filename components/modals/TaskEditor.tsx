@@ -61,6 +61,7 @@ import { useAuthUser } from '@/lib/auth';
 import { activityColor, activityIcon } from '@/lib/activity';
 import { detectMention, renderMentions } from '@/lib/mentions';
 import { useCanWrite, filterNzTeamMembers, filterNzTeamNames } from '@/lib/permissions';
+import { useIsCoarsePointer } from '@/lib/useMediaQuery';
 import { db, supabase } from '@/lib/supabase';
 import type {
   ActivityLogEntry,
@@ -160,6 +161,9 @@ export default function TaskEditor({
   const { updateTask, deleteTask, cancelNewTask, addLane, jumpToTask } =
     usePlannerStore();
   const canEdit = useCanWrite(ws.id);
+  // On touch devices auto-focusing the title would pop the keyboard over the
+  // form (and scroll a long title out of view) before the user has read it.
+  const isTouch = useIsCoarsePointer();
 
   const [t, setT] = useState<Task>({
     ...initial,
@@ -628,7 +632,7 @@ export default function TaskEditor({
     <Dialog open onOpenChange={(open) => !open && handleCancel()}>
       <DialogContent
         data-astryx-theme="neutral"
-        className="sm:max-w-4xl max-h-[75vh] overflow-y-auto gap-0 p-0"
+        className="sm:max-w-4xl max-h-[92dvh] sm:max-h-[75vh] overflow-y-auto gap-0 p-0"
       >
         {/* Header */}
         <DialogHeader className="border-b border-border px-5 pt-4 pb-0">
@@ -639,7 +643,7 @@ export default function TaskEditor({
                 {ws.name}
               </span>
               <span className="text-muted-foreground/40">›</span>
-              <span className="flex flex-row gap-1 text-muted-foreground">
+              <span className="flex flex-row gap-1 text-muted-foreground whitespace-nowrap">
                 <HugeiconsIcon
                   icon={Edit02Icon}
                   className="size-4 text-muted-foreground pt-1"
@@ -725,7 +729,7 @@ export default function TaskEditor({
               <TextInput
                 label="Task title"
                 isLabelHidden
-                hasAutoFocus
+                hasAutoFocus={!isTouch}
                 placeholder="Task title"
                 value={t.name}
                 onChange={(v) => patch({ name: v })}

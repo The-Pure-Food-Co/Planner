@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus, Video, Coffee, TrendingUp, ShoppingBag, Mic } from 'lucide-react'
 import { usePlannerStore } from '@/store/plannerStore'
 import { useCanWrite } from '@/lib/permissions'
+import { useIsMobile } from '@/lib/useMediaQuery'
 import Avatar from '../Avatar'
 import {
   pd, fd, addDays, mondayOf, todayD, fmtShort,
@@ -53,6 +54,8 @@ function Check({ checked, onClick }: { checked: boolean; onClick?: () => void })
 export default function Calendar({ ws, onOpenTask, onAddTask }: Props) {
   const { data, ui, updateTask } = usePlannerStore()
   const canEdit = useCanWrite(ws.id)
+  // Phone: to-do list stacks above the week grid, which scrolls sideways.
+  const isMobile = useIsMobile()
   const today = todayD()
   const [weekStart, setWeekStart] = useState(() => mondayOf(todayD()))
   const [collapsed, setCollapsed] = useState<Set<SectionKey>>(new Set())
@@ -118,11 +121,11 @@ export default function Calendar({ ws, onOpenTask, onAddTask }: Props) {
   }
 
   return (
-    <div style={{ background: C.bg, color: C.ink, minHeight: '100%', margin: '-16px', padding: '18px 24px 24px' }}>
+    <div style={{ background: C.bg, color: C.ink, minHeight: '100%', margin: isMobile ? '-12px' : '-16px', padding: isMobile ? '14px 12px 16px' : '18px 24px 24px' }}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 18 }}>
         <div>
-          <h1 style={{ fontSize: 30, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>Calendar</h1>
+          <h1 style={{ fontSize: isMobile ? 24 : 30, fontWeight: 700, margin: 0, letterSpacing: -0.5 }}>Calendar</h1>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 2 }}>{weekLabel}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -142,9 +145,9 @@ export default function Calendar({ ws, onOpenTask, onAddTask }: Props) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 16 : 24, alignItems: isMobile ? 'stretch' : 'flex-start' }}>
         {/* ── To-do sidebar ─────────────────────────────────────────────── */}
-        <div style={{ width: 260, flexShrink: 0 }}>
+        <div style={{ width: isMobile ? '100%' : 260, flexShrink: 0 }}>
           <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 12px' }}>To-do list</h2>
           {buckets.map(b => {
             const open = !collapsed.has(b.key)
@@ -187,7 +190,10 @@ export default function Calendar({ ws, onOpenTask, onAddTask }: Props) {
         </div>
 
         {/* ── Week grid ─────────────────────────────────────────────────── */}
-        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 14, background: '#fff', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: 0, border: `1px solid ${C.line}`, borderRadius: 14, background: '#fff', overflow: 'hidden', overflowX: 'auto' }}>
+         {/* Seven day columns need ~100px each to stay readable; on phones the
+             grid keeps that width and scrolls sideways inside the card. */}
+         <div style={{ minWidth: isMobile ? 700 : 0 }}>
           {/* Day header row */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: `1px solid ${C.line}` }}>
             {days.map((day, i) => {
@@ -203,7 +209,7 @@ export default function Calendar({ ws, onOpenTask, onAddTask }: Props) {
           </div>
 
           {/* All-day columns */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minHeight: 420, maxHeight: 'calc(100vh - 230px)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', minHeight: isMobile ? 300 : 420, maxHeight: isMobile ? 'none' : 'calc(100vh - 230px)' }}>
             {days.map((day, i) => {
               const items = dayTasks(day)
               return (
@@ -266,6 +272,7 @@ export default function Calendar({ ws, onOpenTask, onAddTask }: Props) {
               )
             })}
           </div>
+         </div>
         </div>
       </div>
     </div>

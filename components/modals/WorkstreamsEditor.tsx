@@ -72,7 +72,7 @@ export default function WorkstreamsEditor({ ws, onClose }: Props) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-xl max-h-[92dvh] sm:max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-[16px] font-normal text-foreground">
             <Layers size={16} strokeWidth={1.75} className="text-muted-foreground" />

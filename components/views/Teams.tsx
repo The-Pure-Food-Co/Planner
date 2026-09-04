@@ -125,10 +125,10 @@ export default function Teams({ onManage, onNew }: Props) {
         {/* header row */}
         <div className="bg-container px-4 py-2 text-sm flex items-center gap-3 text-muted-foreground border-b sticky top-0 z-10">
           <div className="flex-1 min-w-0">Name</div>
-          <div className="w-32">Members</div>
+          <div className="w-24 sm:w-32">Members</div>
           <div className="w-28 hidden sm:block">Workstreams</div>
           <div className="w-20 hidden sm:block">Tasks</div>
-          <div className="w-32 shrink-0" />
+          <div className="w-20 sm:w-32 shrink-0" />
         </div>
 
         {teams.length === 0 && (
@@ -151,7 +151,7 @@ export default function Teams({ onManage, onNew }: Props) {
                 </span>
                 <span className="font-medium truncate">{ws.name}</span>
               </div>
-              <div className="w-32" onClick={(e) => e.stopPropagation()}>
+              <div className="w-24 sm:w-32" onClick={(e) => e.stopPropagation()}>
                 <MembersStack members={[...(effectiveMembers.get(ws.id) ?? [])]} />
               </div>
               <div
@@ -165,7 +165,7 @@ export default function Teams({ onManage, onNew }: Props) {
                 <span>{ws.tasks.length}</span>
               </div>
               <div
-                className="w-32 shrink-0 flex items-center justify-end gap-1"
+                className="w-20 sm:w-32 shrink-0 flex items-center justify-end gap-1"
                 onClick={(e) => e.stopPropagation()}
               >
                 <Button
@@ -184,7 +184,7 @@ export default function Teams({ onManage, onNew }: Props) {
                     title="Workspace settings"
                   >
                     <Settings2 className="size-3.5" />
-                    Manage
+                    <span className="hidden sm:inline">Manage</span>
                   </Button>
                 )}
               </div>

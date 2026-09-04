@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlannerStore } from '@/store/plannerStore'
 import { useMe } from '@/lib/auth'
+import { useIsMobile } from '@/lib/useMediaQuery'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
 import { Grid, GridSpan } from '@astryxdesign/core/Grid'
 import { Heading } from '@astryxdesign/core/Heading'
@@ -426,7 +427,9 @@ function DraggableTodoRow(props: Omit<TodoRowProps, 'dragHandleProps' | 'itemRef
   )
 }
 
-function PersonalTodo({ meId }: { meId: string | null }) {
+// `compact` = phone layout: the panel grows with its content and the page
+// scrolls, instead of the panel filling the viewport and scrolling internally.
+function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?: boolean }) {
   const [todos, setTodos] = useState<Todo[]>([])
   const [todosLoading, setTodosLoading] = useState(true)
   const [filter, setFilter] = useState<TodoFilter>('all')
@@ -645,9 +648,9 @@ function PersonalTodo({ meId }: { meId: string | null }) {
     <Stack
       gap={0}
       className="bg-white"
-      style={{ borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-low)', minWidth: 0, height: '100%', minHeight: 0, overflow: 'hidden' }}
+      style={{ borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-low)', minWidth: 0, height: compact ? 'auto' : '100%', minHeight: 0, overflow: compact ? 'visible' : 'hidden' }}
     >
-      <Stack gap={4} style={{ flex: '0 0 auto', padding: '24px 24px 0' }}>
+      <Stack gap={4} style={{ flex: '0 0 auto', padding: compact ? '16px 16px 0' : '24px 24px 0' }}>
         <Stack direction="horizontal" gap={2} align="center" justify="between">
           <Heading level={1}>Checklist</Heading>
           {meId && !todosLoading && todos.length > 0 && (
@@ -663,7 +666,7 @@ function PersonalTodo({ meId }: { meId: string | null }) {
       </Stack>
 
       {!todosLoading && todos.length > 0 && (
-        <Stack gap={3} style={{ flex: '0 0 auto', padding: '0 24px' }}>
+        <Stack gap={3} style={{ flex: '0 0 auto', padding: compact ? '0 16px' : '0 24px' }}>
           <Divider />
           <Stack direction="horizontal" gap={2} wrap="wrap" align="center" justify="between">
             <SegmentedControl label="Filter to-dos" value={filter} onChange={(v) => setFilter(v as TodoFilter)} size="sm">
@@ -689,7 +692,7 @@ function PersonalTodo({ meId }: { meId: string | null }) {
         </Stack>
       )}
 
-      <Stack gap={3} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 24 }}>
+      <Stack gap={3} style={{ flex: '1 1 auto', minHeight: 0, overflowY: compact ? 'visible' : 'auto', padding: compact ? 16 : 24 }}>
       {todosLoading ? (
         <TodoListSkeleton />
       ) : todos.length === 0 ? (
@@ -806,6 +809,9 @@ export default function MyWork({ onOpenTask }: Props) {
   const { meId, myName } = useMe()
   const [tab, setTab] = useState<WorkTab>('all')
   const [wsFilter, setWsFilter] = useState<string>('all') // workspace id, or 'all'
+  // Desktop: two side-by-side panels, each scrolling internally. Phone: one
+  // column, panels stack and the page itself scrolls.
+  const isMobile = useIsMobile()
 
   const today = todayD()
 
@@ -859,9 +865,13 @@ export default function MyWork({ onOpenTask }: Props) {
   return (
     <div className="page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Stack data-astryx-theme="neutral" gap={5} style={{ margin: '0 auto', width: '100%', flex: '1 1 auto', minHeight: 0 }}>
-        <Grid columns={2} gap={6} style={{ flex: 1, minHeight: 0 }}>
-          <GridSpan columns={1} className="bg-white rounded-md shadow-sm" style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <Stack gap={5} style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: 24 }}>
+        <Grid columns={isMobile ? 1 : 2} gap={isMobile ? 4 : 6} style={{ flex: isMobile ? '0 0 auto' : 1, minHeight: 0 }}>
+          <GridSpan
+            columns={1}
+            className="bg-white rounded-md shadow-sm"
+            style={{ height: isMobile ? 'auto' : '100%', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: isMobile ? 'visible' : 'hidden' }}
+          >
+            <Stack gap={5} style={{ flex: '1 1 auto', minHeight: 0, overflowY: isMobile ? 'visible' : 'auto', padding: isMobile ? 16 : 24 }}>
               <Stack gap={4}>
                 <Heading level={1}>My work</Heading>
                 {allRows.length === 0 ? (
@@ -1000,8 +1010,8 @@ export default function MyWork({ onOpenTask }: Props) {
             </Stack>
           </GridSpan>
 
-          <GridSpan columns={1} style={{ height: '100%', minHeight: 0 }}>
-            <PersonalTodo meId={meId} />
+          <GridSpan columns={1} style={{ height: isMobile ? 'auto' : '100%', minHeight: 0 }}>
+            <PersonalTodo meId={meId} compact={isMobile} />
           </GridSpan>
         </Grid>
       </Stack>

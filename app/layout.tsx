@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth'
@@ -31,6 +31,16 @@ const gilroy = localFont({
 export const metadata: Metadata = {
   title: 'Pure Planner | The Pure Food Co',
   description: 'Team Planner — Gantt timeline, board view, people & KPIs across all workstreams.',
+}
+
+// Responsive viewport: lay out at device width on phones/tablets and let the
+// page paint under the notch/home-indicator areas (safe-area insets are
+// applied in globals.css via env()).
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#C63663',
 }
 
 // No client-side auth gate here — proxy.ts already redirects any

@@ -150,7 +150,7 @@ export default function NotificationsBell() {
           </Button>
         }
       />
-      <PopoverContent align="end" className="w-96 p-0">
+      <PopoverContent align="end" className="w-[min(24rem,calc(100vw-1rem))] p-0">
         <div data-astryx-theme="neutral">
           <div className="flex items-center justify-between px-3 py-2 border-b border-foreground/10">
             <Text type="label" weight="semibold" color="accent">
@@ -192,7 +192,7 @@ export default function NotificationsBell() {
             </div>
 
             {/* Fixed height so the dropdown doesn't jump around with content. */}
-            <div className="h-[380px] overflow-y-auto">
+            <div className="h-[min(380px,60dvh)] overflow-y-auto">
               <TabsContent value="activity">
                 {renderList(activity, {
                   title: 'No activity yet',

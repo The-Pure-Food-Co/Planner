@@ -58,6 +58,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { LANE_PRESETS } from '@/lib/lanePresets';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { uuid } from '@/lib/utils';
 import Avatar from '../Avatar';
 import { Tooltip } from '../tooltip';
@@ -234,6 +235,9 @@ function GanttBar({
 
   const onPointerEnter = useCallback(
     (ev: React.PointerEvent<HTMLDivElement>) => {
+      // Touch has no hover: a finger resting on a bar is a scroll/drag in
+      // progress, not a dwell. Task details live in the editor instead.
+      if (ev.pointerType === 'touch') return;
       cancelHide();
       const { clientX, clientY } = ev;
       hoverTimer.current = setTimeout(() => {
@@ -378,6 +382,27 @@ function GanttBar({
     );
   }, [task, onOpenTask, onUpdate, onMove, onToast, onLiveMoveEnd]);
 
+  // The browser took the pointer away mid-gesture — on touch this is the
+  // chart committing to a native scroll (touch-action: pan-y). Put the bar
+  // back exactly where it was and drop the gesture without opening the task.
+  const onPointerCancel = useCallback(() => {
+    const d = drag.current;
+    const wasMode = d.mode;
+    d.mode = null;
+    d.moved = false;
+    const el = barRef.current;
+    if (el) {
+      el.classList.remove('dragging');
+      el.style.removeProperty('transform');
+      el.style.left = `${x}px`;
+      el.style.width = `${w}px`;
+    }
+    if (fillRef.current) fillRef.current.style.width = `${task.pct || 0}%`;
+    if (wasMode === 'move') onLiveMoveEnd?.();
+    setDragRange(null);
+    setDragPct(null);
+  }, [x, w, task.pct, onLiveMoveEnd]);
+
   return (
     <div
       ref={(el) => {
@@ -395,6 +420,7 @@ function GanttBar({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
     >
@@ -689,8 +715,12 @@ export default function Gantt({
   const [r0, r1] = useMemo(() => ganttRange(ws), [ws]);
   const totalDays = daysBetween(r0, r1) + 1;
   const W = totalDays * dw;
-  const labelW =
-    typeof window !== 'undefined' && window.innerWidth <= 768 ? 220 : 430;
+  // Sidebar width tiers match --label-w / .tb-left in globals.css so the
+  // toolbar divider stays aligned with the sidebar/chart boundary. Reactive,
+  // so rotating a tablet or resizing the window re-lays the chart out.
+  const isPhone = useMediaQuery('(max-width: 767px)');
+  const isTablet = useMediaQuery('(max-width: 1024px)');
+  const labelW = isPhone ? 220 : isTablet ? 320 : 430;
   const rowH = 44,
     hdrH = 48;
   const today = todayD();
@@ -1297,7 +1327,7 @@ export default function Gantt({
                         </span>
                       ))}
                     </span>
-                    <span>
+                    <span className="owner-name">
                       {people.length === 1
                         ? (people[0].name?.split(' ')[0] ?? '')
                         : `${people.length} people`}
@@ -1718,6 +1748,7 @@ export default function Gantt({
               onPointerDown={onHdrPointerDown}
               onPointerMove={onHdrPointerMove}
               onPointerUp={onHdrPointerUp}
+              onPointerCancel={onHdrPointerUp}
             >
               <div className="g-head-row">{mRow}</div>
               <div className="g-head-row">{wRow}</div>
