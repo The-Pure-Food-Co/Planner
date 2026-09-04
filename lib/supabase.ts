@@ -305,7 +305,10 @@ export const db = {
   // Only the provided columns are written, so is_app_admin / role seeds are preserved.
   // avatar_url is written only when we actually have one this session, so a normal
   // reload (no provider_token → no fresh photo) never clobbers a stored photo.
-  // is_nz_team is written separately by AuthGate.tsx, not here.
+  // is_nz_team is written by the shared Auth Hub app (Gantt), not here — this
+  // repo has no code path that sets it, so a user who has only ever signed in
+  // through Planner keeps whatever value (default false) their profiles row
+  // already had.
   linkOwnProfile: (p: { authId: string; email: string; displayName: string; avatarUrl?: string }) =>
     supabase?.from('profiles').upsert(
       {
