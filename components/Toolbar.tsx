@@ -69,8 +69,9 @@ export default function Toolbar({ ws, onAddTask }: Props) {
     return () => window.removeEventListener('gantt-month', onMonth);
   }, []);
 
-  // The toolbar never wraps; below this width the view tabs and Add task
-  // collapse to icons so everything still fits on one row.
+  // Below this width the view tabs and Add task collapse to icons so
+  // everything still fits on one row (phones additionally wrap the bar onto
+  // two rows — see .tb-break in globals.css).
   const [compact, setCompact] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 1440px)');
@@ -234,24 +235,7 @@ export default function Toolbar({ ws, onAddTask }: Props) {
                       ).__ganttPanMonth?.(-1)
                     }
                   />
-                  {month && (
-                    <span
-                      style={{
-                        fontSize: 16,
-                        letterSpacing: '0.01em',
-                        whiteSpace: 'nowrap',
-                        margin: '0 2px',
-                        color: 'var(--charcoal)',
-                        // Fixed to the widest label ("September 2026") so the
-                        // next-month chevron doesn't shift as months change.
-                        width: 122,
-                        textAlign: 'center',
-                        flex: 'none',
-                      }}
-                    >
-                      {month}
-                    </span>
-                  )}
+                  {month && <span className="tb-month">{month}</span>}
                   <IconButton
                     label="Next month"
                     variant="ghost"
@@ -267,7 +251,7 @@ export default function Toolbar({ ws, onAddTask }: Props) {
               </>
             )}
           </div>
-          <span className="spacer" />
+          <span className="spacer tb-spacer-left" />
           <SegmentedControl
             label="Workspace view"
             size="sm"
@@ -287,10 +271,13 @@ export default function Toolbar({ ws, onAddTask }: Props) {
               icon={<Kanban size={13} strokeWidth={1.75} />}
             />
           </SegmentedControl>
+          {/* Phones only (CSS): forces the people/search/filter controls onto
+              a second row so nothing is clipped or scrolled off-screen. */}
+          <span className="tb-break" aria-hidden />
         </>
       )}
 
-      <span className="spacer" />
+      <span className="spacer tb-spacer-mid" />
 
       <span style={{ display: 'inline-flex', alignItems: 'center', paddingLeft: 6 }}>
         {stack.map((p) => (
@@ -388,7 +375,7 @@ export default function Toolbar({ ws, onAddTask }: Props) {
       </span>
 
       {isTaskView && (
-        <div style={{ width: 210, minWidth: 130, flexShrink: 1 }}>
+        <div className="tb-search">
           <TextInput
             label="Search tasks"
             isLabelHidden

@@ -156,7 +156,7 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
 
   return (
     <Dialog open onOpenChange={open => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] gap-0 p-0 flex flex-col">
+      <DialogContent className="sm:max-w-2xl max-h-[92dvh] sm:max-h-[85vh] gap-0 p-0 flex flex-col">
         <DialogHeader className="border-b border-border px-5 pt-4 pb-0">
           <DialogTitle className="flex items-center gap-2 text-lg font-normal text-foreground">
             <Settings size={16} strokeWidth={1.75} className="text-muted-foreground" />

@@ -23,7 +23,7 @@ export default function AppAccessGate({ appKey, children }: { appKey: string; ch
   if (!canSee(appKey)) {
     return (
       <div style={{ fontFamily: "'Montserrat','Inter','Segoe UI',system-ui,sans-serif", background: '#EDE5E2', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ background: '#fff', border: '1px solid #D4CCC9', borderRadius: 16, padding: '40px 48px', textAlign: 'center', maxWidth: 420 }}>
+        <div style={{ background: '#fff', border: '1px solid #D4CCC9', borderRadius: 16, padding: '40px clamp(20px, 6vw, 48px)', textAlign: 'center', width: 'calc(100% - 32px)', maxWidth: 420 }}>
           <div style={{ width: 44, height: 44, borderRadius: 12, background: GRAD, margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 18 }}>
             P
           </div>

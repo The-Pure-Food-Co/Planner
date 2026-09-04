@@ -223,6 +223,14 @@ body {
   margin: 0;
   height: 100%;
 }
+/* Mobile browsers: 100% of <html> can be taller than the visible area while the
+   URL bar is showing, which pushes the footer/toolbar off-screen. dvh tracks
+   the visible viewport as browser chrome collapses/expands. */
+@supports (height: 100dvh) {
+  body {
+    height: 100dvh;
+  }
+}
 body {
   font-family:
     var(--font-gilroy),
@@ -302,6 +310,10 @@ header {
   background: var(--hero);
   position: relative;
   padding: 9px 20px;
+  /* Extend the gradient under the status bar / notch on phones. */
+  padding-top: calc(9px + env(safe-area-inset-top, 0px));
+  padding-left: calc(20px + env(safe-area-inset-left, 0px));
+  padding-right: calc(20px + env(safe-area-inset-right, 0px));
   color: #fff;
   flex: 0 0 auto;
 }
@@ -658,6 +670,9 @@ header > * {
 .toolbar > * {
   flex-shrink: 0;
 }
+.toolbar > .spacer {
+  flex: 1 1 0;
+}
 /* Left cluster sized to the Gantt sidebar head (430px minus bar padding) so
    the divider lines up with the sidebar/chart boundary; kept as an empty
    placeholder on non-timeline views. */
@@ -669,10 +684,29 @@ header > * {
   width: 410px;
   flex: none;
 }
-@media (max-width: 768px) {
-  .tb-left {
-    width: 200px;
-  }
+/* Month label between the pan chevrons. Fixed to the widest label
+   ("September 2026") on desktop so the next-month chevron doesn't shift as
+   months change; released on phones (see the mobile block below). */
+.tb-month {
+  font-size: 16px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  margin: 0 2px;
+  color: var(--charcoal);
+  width: 122px;
+  text-align: center;
+  flex: none;
+}
+/* Search input wrapper: the only control allowed to shrink on one row. */
+.tb-search {
+  width: 210px;
+  min-width: 130px;
+  flex-shrink: 1;
+}
+/* Forced line break + secondary spacer, only used by the phone layout. */
+.tb-break,
+.tb-spacer-2 {
+  display: none;
 }
 /* Beetroot brand for astryx primary controls in the toolbar and its filter
    popover — astryx neutral's primary is near-black; these unlayered rules
@@ -2512,6 +2546,7 @@ table.kpi input {
   width: 580px;
   max-width: 100%;
   max-height: calc(100vh - 80px);
+  max-height: calc(100dvh - 80px);
   overflow-y: auto;
   padding: 20px 22px;
   box-shadow: var(--shadow-lg);
@@ -2860,6 +2895,7 @@ textarea:not([data-astryx-theme] *) {
   background: var(--panel);
   border-top: 1px solid var(--line);
   padding: 5px 20px;
+  padding-bottom: calc(5px + env(safe-area-inset-bottom, 0px));
   font-size: 11.5px;
   color: var(--muted);
   display: flex;
@@ -2900,50 +2936,135 @@ textarea:not([data-astryx-theme] *) {
   display: flex;
 }
 
-@media (max-width: 768px) {
-  header {
-    padding: 10px 12px 0;
+/* ==========================================================================
+   Responsive layout
+   Breakpoints (keep in sync with lib/useMediaQuery.ts):
+     ≤1024px  tablet  — narrower Gantt sidebar, otherwise desktop chrome
+     ≤767px   phone   — stacked toolbar, icon-only header, single-column pages
+     hover:none / pointer:coarse — touch affordances (always-visible actions,
+              resize grips, no hover-only controls)
+   ========================================================================== */
+
+/* --- tablet ------------------------------------------------------------ */
+@media (max-width: 1024px) {
+  :root {
+    --label-w: 320px;
   }
-  .hdr-top {
-    gap: 8px;
+  .tb-left {
+    width: 300px;
   }
-  .logo-block {
-    width: 34px;
-    height: 34px;
-    font-size: 16px;
-    border-radius: 9px;
+  .gs-row .ownercol {
+    width: 72px;
   }
-  .brand-title .wordmark {
-    font-size: 14px;
-    letter-spacing: 0.14em;
-  }
-  .saved-chip {
+  /* Keyboard/mouse hints wrap onto a second line here and don't apply to touch. */
+  .footerbar .hintline {
     display: none;
   }
-  .gsearch {
-    width: 38px;
-    padding: 7px 10px;
-    overflow: hidden;
+}
+
+/* --- phone -------------------------------------------------------------- */
+@media (max-width: 767px) {
+  :root {
+    --label-w: 220px;
   }
-  .hbtn {
-    padding: 6px 10px;
-    font-size: 10px;
-  }
-  .htab {
-    padding: 8px 11px;
-    font-size: 11px;
-  }
-  .toolbar {
+
+  /* header: logo, My work, workspace switcher, bell, avatar on one row */
+  header {
     padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    padding-left: calc(12px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
+  }
+  .hdr-top {
     gap: 6px;
-    overflow-x: auto;
     flex-wrap: nowrap;
   }
-  .toolbar .chip {
-    padding: 4px 10px;
-    font-size: 11px;
+  .hdr-wordmark {
+    display: none;
+  }
+  .hdr-home > span:first-of-type,
+  .hdr-home > span:first-of-type > span:first-of-type {
+    gap: 0;
+  }
+  .gnav-link {
+    padding: 6px 8px;
+  }
+  /* Workspace switcher shrinks and truncates instead of wrapping the bar. */
+  .gws {
+    min-width: 0;
+    flex: 0 1 auto;
+    display: flex;
+  }
+  .gws .gws-link {
+    min-width: 0;
+    max-width: 40vw;
+  }
+  .gws .gws-link > span:first-of-type,
+  .gws .gws-link > span:first-of-type > span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .saved-chip,
+  .gsearch {
+    display: none;
+  }
+  .bell-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  /* toolbar: two rows. Row 1 = timeline controls (Today, zoom, month pan),
+     row 2 = view switch, people filter, search (fills), filters, add task.
+     Everything except .tb-left/.tb-break is pushed after the break via order. */
+  .toolbar {
+    padding: 8px 12px;
+    gap: 6px 8px;
+    flex-wrap: wrap;
+  }
+  .toolbar > * {
+    order: 2;
+  }
+  .tb-left {
+    order: 0;
+    width: 100%;
+    flex: 1 1 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  /* Board/other views leave the placeholder empty — don't spend a row on it. */
+  .tb-left:empty {
+    display: none;
+  }
+  .tb-month {
+    width: auto;
+    font-size: 14px;
+  }
+  .tb-break {
+    order: 1;
+    display: block;
+    flex-basis: 100%;
+    height: 0;
+  }
+  .tb-spacer-left,
+  .tb-spacer-mid {
+    display: none;
+  }
+  /* Long titles no longer scroll out of view in the narrower dialog. */
+  .task-title-input input {
+    font-size: 20px;
+  }
+  .tb-search {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+    /* overflow != visible zeroes the flex item's automatic min-size, so the
+       input's intrinsic width can't force the row to wrap. */
+    overflow: hidden;
+  }
+
   .page {
     padding: 12px;
   }
@@ -2952,24 +3073,47 @@ textarea:not([data-astryx-theme] *) {
   .ovgrid {
     grid-template-columns: 1fr;
   }
-  .board {
-    padding: 12px;
-    gap: 10px;
+  .mpage {
+    max-width: none;
   }
-  .col {
-    min-width: 250px;
-    width: 250px;
+
+  /* gantt: sidebar keeps grip, tick, name, avatars, actions — drops the
+     checklist count and assignee name text. */
+  .g-sidebar-head {
+    padding: 0 6px;
   }
-  .gs-row .ownercol span {
+  .gs-row {
+    padding: 0 6px;
+    gap: 6px;
+  }
+  .gs-row .chk-col {
     display: none;
   }
   .gs-row .ownercol {
-    width: 28px;
+    width: auto;
+    min-width: 24px;
+    gap: 0;
   }
-  .gs-row .chk-badge,
-  .gs-row .pri-tag {
+  .gs-row .owner-name {
     display: none;
   }
+  .gs-row.lane-row .lane-tag {
+    font-size: 14px;
+  }
+  .gs-row .t-name {
+    font-size: 12.5px;
+  }
+  .bar .blabel {
+    font-size: 12px;
+  }
+  .gantt-topright {
+    right: 8px;
+  }
+  .m-cell .current-badge {
+    display: none;
+  }
+
+  /* legacy modal + misc */
   .msrow {
     padding: 9px 12px;
     gap: 10px;
@@ -2981,8 +3125,96 @@ textarea:not([data-astryx-theme] *) {
   .overlay {
     padding: 16px 8px;
   }
+  .frow.frow-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .list-edit.members-list {
+    grid-template-columns: 1fr;
+  }
+  table.kpi td.name {
+    min-width: 140px;
+  }
+  .auth-card {
+    width: min(360px, calc(100vw - 32px));
+    padding: 32px 20px;
+  }
+  #toasts {
+    left: 8px;
+    right: 8px;
+    bottom: 56px;
+    align-items: stretch;
+  }
+  .toast {
+    max-width: none;
+  }
+
+  .footerbar {
+    padding: 4px 12px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+    font-size: 10.5px;
+  }
   .footerbar .hintline {
     display: none;
+  }
+}
+
+/* --- touch -------------------------------------------------------------- */
+@media (hover: none) and (pointer: coarse) {
+  /* Controls that only appear on hover must be visible from the start. */
+  .row-menu,
+  .lane-edit-btn,
+  .bar .grip,
+  .bar .grip.grip-pct {
+    opacity: 1;
+  }
+  .row-menu {
+    width: 28px;
+    height: 28px;
+  }
+  /* HTML5 drag-to-reorder has no touch equivalent; the ⠿ handle is noise.
+     "Move to workstream" / task actions live in the ⋯ menu instead. */
+  .gs-row .grip6 {
+    display: none;
+  }
+  /* A vertical finger swipe on a bar scrolls the chart; a horizontal one
+     reschedules the task (the browser cancels the pointer once it commits to
+     a pan, which GanttBar handles via onPointerCancel). */
+  .bar {
+    touch-action: pan-y;
+  }
+  /* Let the chart header scroll natively; pointer-drag panning still works
+     for mouse users. */
+  .g-chart-head {
+    touch-action: pan-x pan-y;
+  }
+  /* Bigger hit areas for the bar resize grips. */
+  .bar .grip.grip-left,
+  .bar .grip.grip-right {
+    width: 10px;
+    border-radius: 3px;
+  }
+  .bar .grip.grip-left {
+    left: 1px;
+  }
+  .bar .grip.grip-right {
+    right: 1px;
+  }
+  /* Scrollbars are overlay on touch; keep them out of the layout. */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* iOS Safari zooms the page when a focused field's font-size is under 16px,
+   leaving the layout zoomed-in and offset afterwards. Only phones need this;
+   the giant task-title input already exceeds 16px. */
+@media (max-width: 767px) and (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']):not(.task-title-input *),
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 }
 

@@ -102,7 +102,7 @@ export default function Header({ onSearch }: Props) {
               <rect x="316" y="112" width="28" height="56" rx="14" fill="#fff" />
               <path d="M182 288l48 48 100-104" fill="none" stroke="#943152" strokeWidth="34" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap' }}>Pure Planner</span>
+            <span className="hdr-wordmark" style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap' }}>Pure Planner</span>
           </Button>
 
           <nav className="gnav">

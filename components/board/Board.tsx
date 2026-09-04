@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import {
-  DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  DndContext, DragOverlay, MouseSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, closestCorners,
   type DragStartEvent, type DragOverEvent, type DragEndEvent, type UniqueIdentifier,
 } from '@dnd-kit/core'
@@ -156,8 +156,12 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
   const [override, setOverride] = useState<Columns | null>(null)
   const view = override ?? baseColumns
 
+  // Mouse: drag after a few px of movement (a plain click opens the task).
+  // Touch: long-press to pick a card up, so a normal finger swipe still
+  // scrolls the column / pans between columns instead of dragging.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -293,7 +297,7 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
         {...listeners}
         onClick={() => onOpenTask(ws.id, task)}
         className={cn(
-          'w-full outline-none',
+          'w-full outline-none touch-manipulation select-none',
           canEdit ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
           isDragging && 'opacity-40',
         )}
@@ -309,7 +313,7 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
     const [menuOpen, setMenuOpen] = useState(false)
     const [label, setLabel] = useState(status.label)
     return (
-      <div className="shrink-0 w-[300px] lg:w-[360px] flex flex-col h-full">
+      <div className="shrink-0 w-[min(300px,calc(100vw-40px))] sm:w-[300px] lg:w-[360px] flex flex-col h-full snap-center sm:snap-align-none">
         <div
           className={cn(
             'rounded-lg border p-3 flex flex-col max-h-full transition-all',
@@ -446,12 +450,14 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
         onDragEnd={onDragEnd}
         onDragCancel={reset}
       >
-        <div className="flex flex-1 min-h-0 gap-3 px-3 pt-2 pb-2 overflow-x-auto">
+        {/* Phones: columns are near full-width and snap one-per-swipe;
+            wider screens scroll freely. */}
+        <div className="flex flex-1 min-h-0 gap-3 px-3 pt-11 sm:pt-2 pb-2 overflow-x-auto snap-x snap-proximity sm:snap-none">
           {cols.map(status => <Column key={status.id} status={status} />)}
           {canAdmin && (
             <button
               onClick={addState}
-              className="shrink-0 w-[260px] h-fit flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              className="shrink-0 w-[min(260px,calc(100vw-40px))] sm:w-[260px] h-fit flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors snap-center sm:snap-align-none"
             >
               <HugeiconsIcon icon={Add01Icon} className="size-4" />
               Add state
@@ -461,7 +467,7 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
 
         <DragOverlay>
           {activeTask ? (
-            <div className="w-[300px] lg:w-[360px] shadow-xl cursor-grabbing">
+            <div className="w-[min(300px,calc(100vw-40px))] sm:w-[300px] lg:w-[360px] shadow-xl cursor-grabbing">
               <CardBody
                 task={activeTask}
                 column={cols.find(c => c.id === (findColumn(view, activeId) ?? taskStatusId(activeTask)))}

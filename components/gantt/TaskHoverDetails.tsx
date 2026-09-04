@@ -97,7 +97,7 @@ export default function TaskHoverDetails({
   return createPortal(
     <div
       ref={ref}
-      className="w-[550px] max-h-[45vh] overflow-y-auto flex flex-col gap-3 rounded-xl bg-[#faf7f4] p-4 text-sm text-popover-foreground ring-1 ring-[var(--line)] cursor-default transition-opacity duration-200"
+      className="w-[min(550px,calc(100vw-24px))] max-h-[45vh] overflow-y-auto flex flex-col gap-3 rounded-xl bg-[#faf7f4] p-4 text-sm text-popover-foreground ring-1 ring-[var(--line)] cursor-default transition-opacity duration-200"
       style={{
         ...style,
         zIndex: 60,
