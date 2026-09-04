@@ -6,7 +6,7 @@ import {
   type DragStartEvent, type DragOverEvent, type DragEndEvent, type UniqueIdentifier,
 } from '@dnd-kit/core'
 import {
-  SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates,
+  SortableContext, verticalListSortingStrategy, useSortable, sortableKeyboardCoordinates, arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { HugeiconsIcon } from '@hugeicons/react'
@@ -14,7 +14,7 @@ import {
   Add01Icon, MoreHorizontalIcon,
   CheckmarkCircle02Icon,
 } from '@hugeicons/core-free-icons'
-import { Trash2 } from 'lucide-react'
+import { Trash2, ArrowUpDown, Check } from 'lucide-react'
 import { usePlannerStore } from '@/store/plannerStore'
 import { useCanWrite, useCanAdmin } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
@@ -27,13 +27,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { cn, pd, uuid, wsStatuses, taskStatusId, taskMatchesSearch } from '@/lib/utils'
+import { cn, pd, uuid, wsStatuses, taskStatusId, taskMatchesSearch, mondayOf } from '@/lib/utils'
 import type { Workspace, Task, WorkflowState } from '@/lib/types'
+
+type BoardSort = 'manual' | 'week'
 
 interface Props {
   ws: Workspace
   onOpenTask: (wsId: string, task: Task) => void
-  onAddTask?: (wsId: string, laneId: string, start?: string) => void
+  onAddTask?: (wsId: string, laneId: string, start: string | undefined, statusId: string) => void
 }
 
 type Columns = Record<string, string[]>
@@ -57,7 +59,7 @@ function StatusRing({ color, done }: { color: string; done: boolean }) {
 }
 
 export default function Board({ ws, onOpenTask, onAddTask }: Props) {
-  const { data, ui, updateWorkspace, moveToBoardStatus } = usePlannerStore()
+  const { data, ui, updateWorkspace, moveToBoardStatus, reorderBoardColumn } = usePlannerStore()
   const canEdit = useCanWrite(ws.id)
   const canAdmin = useCanAdmin(ws.id)
   const cols = wsStatuses(ws)
@@ -90,25 +92,63 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
 
   const taskMap = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks])
 
-  // Canonical column → ordered card-ids, derived from the store and always
-  // sorted by end date (no-date tasks sort last) — date order wins over manual
-  // drag position, so dropping a card within its own column is a no-op.
+  // 'week' groups each column by due week (date order wins, manual position
+  // breaks ties within a week) with separators rendered between groups.
+  // 'manual' is a flat, freely-orderable list per column, no separators.
+  // Not persisted — resets to 'week' (today's only behaviour) per page load,
+  // same as the Checklist's own sort toggle in components/views/MyWork.tsx.
+  const [sort, setSort] = useState<BoardSort>('week')
+
+  const manualIndex = (t: Task): number => {
+    const n = t.boardBucket ? Number(t.boardBucket) : NaN
+    return Number.isFinite(n) ? n : Infinity // unset → sorts after any manually-placed card
+  }
+
+  // Canonical column → ordered card-ids, derived from the store. In 'manual'
+  // mode a card's position is fully user-controlled (boardBucket); in 'week'
+  // mode due-week wins and boardBucket only orders cards within the same week.
   const baseColumns = useMemo<Columns>(() => {
     const map: Columns = {}
     for (const c of cols) {
-      map[c.id] = tasks
-        .filter(t => taskStatusId(t) === c.id)
-        .sort((a, b) => {
-          if (a.noDate && b.noDate) return 0
-          if (a.noDate) return 1
-          if (b.noDate) return -1
-          return a.end < b.end ? -1 : a.end > b.end ? 1 : 0
-        })
-        .map(t => t.id)
+      const colTasks = tasks.filter(t => taskStatusId(t) === c.id)
+      map[c.id] = (sort === 'manual'
+        ? colTasks.sort((a, b) => manualIndex(a) - manualIndex(b) || a.end.localeCompare(b.end))
+        : colTasks.sort((a, b) => {
+            if (a.noDate && b.noDate) return manualIndex(a) - manualIndex(b)
+            if (a.noDate) return 1
+            if (b.noDate) return -1
+            const wa = mondayOf(pd(a.end)).getTime()
+            const wb = mondayOf(pd(b.end)).getTime()
+            return wa - wb || manualIndex(a) - manualIndex(b) || a.end.localeCompare(b.end)
+          })
+      ).map(t => t.id)
     }
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, cols.map(c => c.id).join()])
+  }, [tasks, cols.map(c => c.id).join(), sort])
+
+  // Week-separator labels for 'week' mode: for each column, the ordered list
+  // of card-ids paired with a label wherever a new due-week group starts
+  // (null for the rest of that group's cards — the header renders once).
+  const weekLabels = useMemo(() => {
+    if (sort !== 'week') return {} as Record<string, Record<string, string>>
+    const out: Record<string, Record<string, string>> = {}
+    for (const c of cols) {
+      const ids = baseColumns[c.id] ?? []
+      const labels: Record<string, string> = {}
+      let last: string | null = null
+      for (const id of ids) {
+        const t = taskMap.get(id)
+        if (!t) continue
+        const label = t.noDate
+          ? 'No date'
+          : `Week of ${new Intl.DateTimeFormat('en-NZ', { day: 'numeric', month: 'short' }).format(mondayOf(pd(t.end)))}`
+        if (label !== last) { labels[id] = label; last = label }
+      }
+      out[c.id] = labels
+    }
+    return out
+  }, [sort, cols, baseColumns, taskMap])
 
   // While a drag crosses columns we hold a live arrangement here so cards animate
   // between columns; it's reconciled back to the store on drop and then cleared.
@@ -170,11 +210,36 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
     const startCol = findColumn(baseColumns, active.id)
     if (!over || !target) { reset(); return }
 
-    // Columns are always date-sorted, so only a cross-column drop (a status
-    // change) matters — reordering within a column is a no-op.
     if (startCol !== target) {
+      // Cross-column drop: a status change. boardBucket resets to "end of the
+      // new column" inside moveToBoardStatus itself.
       const status = cols.find(c => c.id === target)
       moveToBoardStatus(ws.id, target, String(active.id), status?.isDone)
+    } else {
+      // Same-column drop: reorder within the column. In 'week' mode this is
+      // scoped to the dragged card's own week group — the column is already
+      // grouped-then-sorted by week, so that group is a contiguous slice.
+      const colIds = baseColumns[startCol]
+      const activeKey = String(active.id)
+      const overKey = String(over.id)
+      const fromIdx = colIds.indexOf(activeKey)
+      let toIdx = colIds.indexOf(overKey)
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) { reset(); return }
+
+      if (sort === 'week') {
+        const labels = weekLabels[startCol] ?? {}
+        // Walk out from fromIdx to the ids whose label starts/ends this group.
+        let groupStart = fromIdx
+        while (groupStart > 0 && !labels[colIds[groupStart]]) groupStart--
+        let groupEnd = fromIdx
+        while (groupEnd + 1 < colIds.length && !labels[colIds[groupEnd + 1]]) groupEnd++
+        if (toIdx < groupStart || toIdx > groupEnd) { reset(); return } // dropped outside its own week — ignore
+        const scoped = colIds.slice(groupStart, groupEnd + 1)
+        const reordered = arrayMove(scoped, fromIdx - groupStart, toIdx - groupStart)
+        reorderBoardColumn(ws.id, startCol, [...colIds.slice(0, groupStart), ...reordered, ...colIds.slice(groupEnd + 1)])
+      } else {
+        reorderBoardColumn(ws.id, startCol, arrayMove(colIds, fromIdx, toIdx))
+      }
     }
     reset()
   }
@@ -261,11 +326,6 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
               <span className="text-xs text-muted-foreground leading-none min-w-5 text-center shrink-0">{ids.length}</span>
             </div>
             <div className="flex items-center gap-1 justify-center shrink-0">
-              {canEdit && onAddTask && (
-                <Button variant="ghost" size="icon-xs" onClick={() => onAddTask(ws.id, ui.stream || '')} aria-label="Add task">
-                  <HugeiconsIcon icon={Add01Icon} className="size-4" />
-                </Button>
-              )}
               {canAdmin && (
                 <DropdownMenu
                   open={menuOpen}
@@ -321,14 +381,25 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
             <div ref={setNodeRef} className="flex flex-col gap-1.5 overflow-y-auto h-full w-full pr-1.5 min-h-[40px]">
               {ids.map(id => {
                 const task = taskMap.get(id)
-                return task ? <SortableCard key={id} task={task} column={status} /> : null
+                if (!task) return null
+                const weekLabel = weekLabels[status.id]?.[id]
+                return (
+                  <div key={id} className="contents">
+                    {weekLabel && (
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mt-1.5 first:mt-0 px-0.5">
+                        {weekLabel}
+                      </div>
+                    )}
+                    <SortableCard task={task} column={status} />
+                  </div>
+                )
               })}
 
               {canEdit && onAddTask && (
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => onAddTask(ws.id, ui.stream || '')}
+                  onClick={() => onAddTask(ws.id, ui.stream || '', undefined, status.id)}
                   className="gap-2 text-xs h-auto py-1 px-0 self-start hover:bg-background"
                 >
                   <HugeiconsIcon icon={Add01Icon} className="size-4" />
@@ -345,37 +416,62 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
   const activeTask = activeId ? taskMap.get(String(activeId)) : undefined
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCorners}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
-      onDragCancel={reset}
-    >
-      <div data-astryx-theme="neutral" className="flex h-full gap-3 px-3 pt-4 pb-2 overflow-x-auto bg-[var(--cauliflower)]">
-        {cols.map(status => <Column key={status.id} status={status} />)}
-        {canAdmin && (
-          <button
-            onClick={addState}
-            className="shrink-0 w-[260px] h-fit flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <HugeiconsIcon icon={Add01Icon} className="size-4" />
-            Add state
-          </button>
-        )}
+    <div data-astryx-theme="neutral" className="relative flex flex-col h-full bg-[var(--cauliflower)]">
+      <div className="absolute right-3 top-2 z-10">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-7 bg-[var(--cauliflower)]">
+                <ArrowUpDown size={13} strokeWidth={1.75} />
+                {sort === 'manual' ? 'Manual order' : 'By due week'}
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onClick={() => setSort('week')}>
+              {sort === 'week' && <Check size={14} strokeWidth={1.75} />}
+              <span className={sort === 'week' ? '' : 'ml-[20px]'}>By due week</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setSort('manual')}>
+              {sort === 'manual' && <Check size={14} strokeWidth={1.75} />}
+              <span className={sort === 'manual' ? '' : 'ml-[20px]'}>Manual order</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <DragOverlay>
-        {activeTask ? (
-          <div className="w-[300px] lg:w-[360px] shadow-xl cursor-grabbing">
-            <CardBody
-              task={activeTask}
-              column={cols.find(c => c.id === (findColumn(view, activeId) ?? taskStatusId(activeTask)))}
-            />
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={reset}
+      >
+        <div className="flex flex-1 min-h-0 gap-3 px-3 pt-2 pb-2 overflow-x-auto">
+          {cols.map(status => <Column key={status.id} status={status} />)}
+          {canAdmin && (
+            <button
+              onClick={addState}
+              className="shrink-0 w-[260px] h-fit flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <HugeiconsIcon icon={Add01Icon} className="size-4" />
+              Add state
+            </button>
+          )}
+        </div>
+
+        <DragOverlay>
+          {activeTask ? (
+            <div className="w-[300px] lg:w-[360px] shadow-xl cursor-grabbing">
+              <CardBody
+                task={activeTask}
+                column={cols.find(c => c.id === (findColumn(view, activeId) ?? taskStatusId(activeTask)))}
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </div>
   )
 }
