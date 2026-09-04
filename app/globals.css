@@ -572,6 +572,18 @@ header > * {
   align-items: center;
   gap: 6px;
 }
+.gws {
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.gws .gws-link,
+.gws .gws-chevron {
+  border-radius: 0;
+}
+.gws-chevron {
+  padding: 6px 8px;
+}
 .ctx-bar {
   display: flex;
   align-items: center;

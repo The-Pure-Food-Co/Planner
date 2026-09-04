@@ -20,7 +20,8 @@ import {
 import Avatar from '@/components/Avatar'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationSettings from '@/components/modals/NotificationSettings'
-import { Building2, LogOut, ListTodo, Camera, BellRing, Search, ArrowLeft, type LucideIcon } from 'lucide-react'
+import { ButtonGroup } from '@astryxdesign/core/ButtonGroup'
+import { LogOut, ListTodo, Camera, BellRing, Search, ArrowLeft, ChevronDown, LayoutGrid, type LucideIcon } from 'lucide-react'
 import { taskAssignedTo } from '@/lib/utils'
 
 interface Props {
@@ -31,13 +32,12 @@ interface Props {
 // People and KPIs are hidden for now — see planner page.tsx / SearchPalette for the matching guards.
 const GLOBAL_PAGES: Array<{ id: PrimaryTab; label: string; Icon: LucideIcon }> = [
   { id: 'mywork', label: 'My work', Icon: ListTodo },
-  { id: 'teams', label: 'Workspaces', Icon: Building2 },
 ]
 
 const HUB_URL = process.env.NEXT_PUBLIC_AUTH_HUB_URL
 
 export default function Header({ onSearch }: Props) {
-  const { data, ui, setUi, saveUi, live, updateMyAvatar } = usePlannerStore()
+  const { data, ui, setUi, saveUi, live, updateMyAvatar, openWs } = usePlannerStore()
   const onlineIds = usePlannerStore(s => s.onlineIds)
   const authUser = useAuthUser()
   const { meId, me, myName } = useMe()
@@ -46,6 +46,19 @@ export default function Header({ onSearch }: Props) {
 
   const curWs = data.workspaces.find(w => w.id === ui.ws) ?? data.workspaces[0]
   const myRole = useMyRole(curWs?.id ?? null)
+
+  // Workspaces the user can actually navigate into: real membership in live
+  // mode, everything in local/seed mode (no server to scope against — see
+  // lib/permissions.ts's resolveRole, which grants full access the same way).
+  const isAppAdmin = !live || !!data.members.find(m => m.id === meId)?.isAppAdmin
+  const myWorkspaces = isAppAdmin
+    ? data.workspaces
+    : data.workspaces.filter(w => data.memberships.some(m => m.workspaceId === w.id && m.userId === meId))
+
+  // Defaults to the most recently visited workspace (ui.ws, already persisted
+  // by openWs) so the button target survives reloads, falling back to the
+  // first workspace the user has access to.
+  const jumpWs = (myWorkspaces.find(w => w.id === ui.ws) ?? myWorkspaces[0]) ?? null
 
   const roleLabel = live
     ? (me?.isAppAdmin ? 'App admin' : myRole === 'admin' ? 'Workspace admin' : myRole === 'member' ? 'Member' : 'Viewer')
@@ -91,6 +104,45 @@ export default function Header({ onSearch }: Props) {
               />
             ))}
           </nav>
+
+          {jumpWs && (
+            <ButtonGroup label="Jump to workspace" className="gws">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gnav-link gws-link"
+                label={jumpWs.name}
+                onClick={() => openWs(jumpWs.id)}
+              />
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      className="gnav-link gws-chevron"
+                      label="Choose a workspace"
+                      icon={<ChevronDown size={14} strokeWidth={1.75} />}
+                    />
+                  }
+                />
+                <DropdownMenuContent align="start" className="min-w-[200px]">
+                  <DropdownMenuGroup>
+                    {myWorkspaces.map(w => (
+                      <DropdownMenuItem key={w.id} onClick={() => openWs(w.id)}>
+                        {w.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setTab('teams')}>
+                    <LayoutGrid size={14} strokeWidth={1.75} />
+                    View all workspaces
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </ButtonGroup>
+          )}
 
           {/* "Search anything" global search is hidden for now — re-enable by
               uncommenting this button. onSearch/SearchPalette wiring is untouched. */}
