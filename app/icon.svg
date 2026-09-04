@@ -1,24 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="The Pantry">
-  <!-- Pantry doors reduced for small sizes: no panel lines or handles, just
-       two door shapes and the seam. The earlier version kept the full
-       illustration and turned to mush at 16px — at favicon size the "P" has
-       to be the mark, with the doors reading as a frame around it. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Pure Planner">
+  <!-- Calendar + checklist mark: simplified to hold together at favicon size —
+       a single rounded tile, one bold calendar frame, and a checkmark, no
+       thin ruled lines or small typographic date numerals that would mush. -->
   <defs>
-    <linearGradient id="doors" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#93328E"/>
       <stop offset="0.55" stop-color="#C63663"/>
       <stop offset="1" stop-color="#F8485E"/>
     </linearGradient>
   </defs>
 
-  <!-- Two doors, seam left as a transparent gutter down the middle -->
-  <g fill="url(#doors)">
-    <rect x="40" y="40" width="200" height="432" rx="28"/>
-    <rect x="272" y="40" width="200" height="432" rx="28"/>
-  </g>
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#tile)"/>
 
-  <!-- "P" knocked straight out of the doors: one counter, heavy stem, sized
-       to span the seam so it holds together as a single silhouette. -->
-  <path d="M170 130h104c62 0 100 37 100 92s-38 94-100 94h-40v66h-64zM234 186v74h34c24 0 38-14 38-37s-14-37-38-37z"
-        fill="#FFFFFF"/>
+  <!-- Calendar body -->
+  <rect x="120" y="146" width="272" height="240" rx="32" fill="#FFFFFF"/>
+  <!-- Header band -->
+  <path d="M120 178a32 32 0 0 1 32-32h208a32 32 0 0 1 32 32v34H120z" fill="#943152"/>
+  <!-- Hanging rings -->
+  <rect x="168" y="112" width="28" height="56" rx="14" fill="#FFFFFF"/>
+  <rect x="316" y="112" width="28" height="56" rx="14" fill="#FFFFFF"/>
+
+  <!-- Checkmark -->
+  <path d="M182 288l48 48 100-104" fill="none" stroke="#943152" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

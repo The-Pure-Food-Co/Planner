@@ -29,8 +29,8 @@ const gilroy = localFont({
 })
 
 export const metadata: Metadata = {
-  title: 'The Pure Food Co | Apps',
-  description: 'TPFC Apps',
+  title: 'Pure Planner | The Pure Food Co',
+  description: 'Team Planner — Gantt timeline, board view, people & KPIs across all workstreams.',
 }
 
 // No client-side auth gate here — proxy.ts already redirects any
