@@ -16,7 +16,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
-import { Select, SelectTrigger, SelectContent, SelectItem } from '@/components/ui/select';
 import {
   MagnifyingGlassIcon,
   FunnelIcon,
@@ -27,7 +26,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { GanttChartSquare, Kanban } from 'lucide-react';
 import Avatar from '@/components/Avatar';
-import { getWorkspaceIcon } from '@/lib/workspace-icons';
 import { filterNzTeamNames, useCanWrite } from '@/lib/permissions';
 import { avatarByName } from '@/lib/utils';
 
@@ -183,10 +181,6 @@ export default function Toolbar({ ws, onAddTask }: Props) {
     );
   };
 
-  const setWs = (id: string) => {
-    setUi({ ws: id, stream: '' });
-    saveUi();
-  };
   const setTab = (t: PrimaryTab) => {
     setUi({ primaryTab: t });
     saveUi();
@@ -274,20 +268,6 @@ export default function Toolbar({ ws, onAddTask }: Props) {
             )}
           </div>
           <span className="spacer" />
-          <Select value={ws.id} onValueChange={(v) => setWs(v)}>
-            <SelectTrigger
-              placeholder="Select workspace…"
-              icon={getWorkspaceIcon(ws.icon)}
-              className="w-auto max-w-[220px] font-bold"
-            />
-            <SelectContent>
-              {data.workspaces.map((w, i) => (
-                <SelectItem key={w.id} index={i} value={w.id} icon={getWorkspaceIcon(w.icon)}>
-                  {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <SegmentedControl
             label="Workspace view"
             size="sm"
