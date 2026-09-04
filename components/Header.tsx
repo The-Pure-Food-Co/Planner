@@ -87,7 +87,21 @@ export default function Header({ onSearch }: Props) {
             />
           )}
           <Button variant="ghost" className="hdr-home" label="All workspaces" onClick={() => setTab('teams')}>
-            <span className="logo-block" style={{ width: 34, height: 34, borderRadius: 9, fontSize: 14 }}>P</span>
+            <svg width="34" height="34" viewBox="0 0 512 512" aria-hidden="true" style={{ flex: '0 0 auto' }}>
+              <defs>
+                <linearGradient id="hdr-logo-tile" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#93328E" />
+                  <stop offset="0.55" stopColor="#C63663" />
+                  <stop offset="1" stopColor="#F8485E" />
+                </linearGradient>
+              </defs>
+              <rect x="32" y="32" width="448" height="448" rx="96" fill="url(#hdr-logo-tile)" />
+              <rect x="120" y="146" width="272" height="240" rx="32" fill="#fff" />
+              <path d="M120 178a32 32 0 0 1 32-32h208a32 32 0 0 1 32 32v34H120z" fill="#943152" />
+              <rect x="168" y="112" width="28" height="56" rx="14" fill="#fff" />
+              <rect x="316" y="112" width="28" height="56" rx="14" fill="#fff" />
+              <path d="M182 288l48 48 100-104" fill="none" stroke="#943152" strokeWidth="34" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             <span style={{ fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap' }}>Pure Planner</span>
           </Button>
 
