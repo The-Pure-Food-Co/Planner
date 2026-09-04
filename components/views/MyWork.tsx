@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlannerStore } from '@/store/plannerStore'
 import { useMe } from '@/lib/auth'
 import { EmptyState } from '@astryxdesign/core/EmptyState'
@@ -801,7 +801,8 @@ const TAB_KEYS: Record<WorkTab, ReadonlyArray<(typeof SECTIONS)[number]['key']>>
 }
 
 export default function MyWork({ onOpenTask }: Props) {
-  const { data } = usePlannerStore()
+  const workspaces = usePlannerStore(s => s.data.workspaces)
+  const members = usePlannerStore(s => s.data.members)
   const { meId, myName } = useMe()
   const [tab, setTab] = useState<WorkTab>('all')
   const [wsFilter, setWsFilter] = useState<string>('all') // workspace id, or 'all'
@@ -811,27 +812,34 @@ export default function MyWork({ onOpenTask }: Props) {
   // Gather every open task assigned to me (unfiltered) so the workspace picker
   // can offer every workspace that actually has work for me, regardless of the
   // current filter.
-  const allRows: Row[] = []
-  const wsIds = new Set<string>()
-  data.workspaces.forEach(w => w.tasks.forEach(t => {
-    if ((t.pct || 0) >= 100) return
-    if (!taskAssignedTo(t, data.members, meId, myName)) return
-    allRows.push({ t, w })
-    wsIds.add(w.id)
-  }))
-  const myWorkspaces = data.workspaces.filter(w => wsIds.has(w.id))
+  const { allRows, myWorkspaces } = useMemo(() => {
+    const allRows: Row[] = []
+    const wsIds = new Set<string>()
+    workspaces.forEach(w => w.tasks.forEach(t => {
+      if ((t.pct || 0) >= 100) return
+      if (!taskAssignedTo(t, members, meId, myName)) return
+      allRows.push({ t, w })
+      wsIds.add(w.id)
+    }))
+    return { allRows, myWorkspaces: workspaces.filter(w => wsIds.has(w.id)) }
+  }, [workspaces, members, meId, myName])
+
+  const wsIds = useMemo(() => new Set(myWorkspaces.map(w => w.id)), [myWorkspaces])
 
   // Guard against a stale filter pointing at a workspace that no longer has work.
   const activeWs = wsFilter !== 'all' && wsIds.has(wsFilter) ? wsFilter : 'all'
-  const activeWsName = data.workspaces.find(w => w.id === activeWs)?.name
+  const activeWsName = workspaces.find(w => w.id === activeWs)?.name
 
   const rows = activeWs === 'all' ? allRows : allRows.filter(r => r.w.id === activeWs)
 
-  const buckets: Record<(typeof SECTIONS)[number]['key'], Row[]> = {
-    overdue: [], today: [], week: [], later: [], nodate: [],
-  }
-  rows.forEach(({ t, w }) => buckets[dueBucketOf(t, today)].push({ t, w }))
-  SECTIONS.forEach(s => buckets[s.key].sort((a, b) => a.t.end.localeCompare(b.t.end)))
+  const buckets = useMemo(() => {
+    const b: Record<(typeof SECTIONS)[number]['key'], Row[]> = {
+      overdue: [], today: [], week: [], later: [], nodate: [],
+    }
+    rows.forEach(({ t, w }) => b[dueBucketOf(t, today)].push({ t, w }))
+    SECTIONS.forEach(s => b[s.key].sort((a, b) => a.t.end.localeCompare(b.t.end)))
+    return b
+  }, [rows, today])
 
   const total = rows.length
   const upcomingCount = UPCOMING_KEYS.reduce((n, k) => n + buckets[k].length, 0)
