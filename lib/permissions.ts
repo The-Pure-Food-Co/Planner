@@ -44,8 +44,9 @@ export function myRole(workspaceId: string | null): Role | null {
 export const canWrite = (role: Role | null): boolean => role === 'admin' || role === 'member'
 export const canAdmin = (role: Role | null): boolean => role === 'admin'
 
-// App is scoped to the NZ Team for now (see components/AuthGate.tsx, which gates
-// sign-in itself). This filters roster/picker display names to match: a name is
+// App is scoped to the NZ Team for now — is_nz_team is written by the shared
+// Auth Hub app (Gantt), not by this repo (see lib/supabase.ts's linkOwnProfile).
+// This filters roster/picker display names to match: a name is
 // shown only if it resolves to a signed-in member who is confirmed NZ Team.
 // Unlinked names (legacy owner strings, pre-provisioned people who haven't signed
 // in) are hidden by default — the app should show NZ Team only, not "everyone we

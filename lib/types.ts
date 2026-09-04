@@ -191,7 +191,7 @@ export interface Member {
   displayName: string
   avatarUrl: string
   isAppAdmin: boolean
-  isNzTeam: boolean   // Entra ID "NZ Team" group membership, checked at sign-in (see AuthGate)
+  isNzTeam: boolean   // Entra ID "NZ Team" group membership; written by the shared Auth Hub app (Gantt), not this repo
   notificationPrefs?: NotificationPrefs
 }
 

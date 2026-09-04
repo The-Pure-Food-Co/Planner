@@ -519,7 +519,22 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   },
 
   openWs: (id, view) => {
-    set(s => ({ ui: { ...s.ui, page: 'ws', ws: id, wsView: view ?? s.ui.wsView, stream: '', primaryTab: 'timeline' as PrimaryTab } }))
+    // Preserve whichever workspace-scoped tab (timeline/board/calendar/table)
+    // the user is already on — jumping between workspaces from the header's
+    // workspace switcher should keep you on the same view, not bounce back to
+    // Timeline. Only default to Timeline when coming from a non-workspace tab
+    // (My work, Workspaces) where there's no view to carry over.
+    const WS_TABS: PrimaryTab[] = ['timeline', 'board', 'calendar', 'table']
+    set(s => ({
+      ui: {
+        ...s.ui,
+        page: 'ws',
+        ws: id,
+        wsView: view ?? s.ui.wsView,
+        stream: '',
+        primaryTab: WS_TABS.includes(s.ui.primaryTab) ? s.ui.primaryTab : ('timeline' as PrimaryTab),
+      },
+    }))
     get().saveUi()
   },
 

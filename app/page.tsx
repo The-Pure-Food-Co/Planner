@@ -234,7 +234,7 @@ function PlannerInner() {
       <div className="footerbar">
         <span className="tagline">For a full life.</span>
         <span className="hintline">
-          <kbd>Ctrl K</kbd> search · <kbd>g m</kbd> my work · drag bars to reschedule · drag ⠿ to reorder · double-click Gantt row to add task · drag header to pan
+          <kbd>g m</kbd> my work · drag bars to reschedule · drag ⠿ to reorder · double-click Gantt row to add task · drag header to pan
         </span>
         <span className="spacer" />
         <span>v{version} · {process.env.NEXT_PUBLIC_SUPABASE_URL ? 'cloud' : 'local'}</span>
