@@ -13,7 +13,6 @@ import Table from '@/components/table/Table'
 import SearchPalette from '@/components/SearchPalette'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
-import { version } from '@/package.json'
 import TaskEditor from '@/components/modals/TaskEditor'
 import LaneEditor from '@/components/modals/LaneEditor'
 import WorkspaceEditor from '@/components/modals/WorkspaceEditor'
@@ -238,15 +237,6 @@ function PlannerInner() {
         {tab === 'mywork' && <MyWork onOpenTask={openTaskModal} />}
         {tab === 'teams' && <Teams onManage={(ws) => setModal({ type: 'workspace', ws })} onNew={() => setModal({ type: 'newWs' })} />}
       </main>
-
-      <div className="footerbar">
-        <span className="tagline">For a full life.</span>
-        <span className="hintline">
-          <kbd>g m</kbd> my work · drag bars to reschedule · drag ⠿ to reorder · double-click Gantt row to add task · drag header to pan
-        </span>
-        <span className="spacer" />
-        <span>v{version} · {process.env.NEXT_PUBLIC_SUPABASE_URL ? 'cloud' : 'local'}</span>
-      </div>
 
       {dropzone && (
         <div id="dropzone" className="show">Drop backup JSON to import</div>

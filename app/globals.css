@@ -2890,33 +2890,6 @@ textarea:not([data-astryx-theme] *) {
   color: #fff;
 }
 
-/* footer */
-.footerbar {
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-  padding: 5px 20px;
-  padding-bottom: calc(5px + env(safe-area-inset-bottom, 0px));
-  font-size: 11.5px;
-  color: var(--muted);
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  flex: 0 0 auto;
-}
-.footerbar .tagline {
-  color: var(--beetroot);
-  font-style: italic;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.footerbar kbd {
-  background: var(--cauliflower);
-  border-radius: 4px;
-  padding: 0 5px;
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-}
 #dropzone {
   position: fixed;
   inset: 0;
@@ -2955,10 +2928,6 @@ textarea:not([data-astryx-theme] *) {
   }
   .gs-row .ownercol {
     width: 72px;
-  }
-  /* Keyboard/mouse hints wrap onto a second line here and don't apply to touch. */
-  .footerbar .hintline {
-    display: none;
   }
 }
 
@@ -3148,15 +3117,6 @@ textarea:not([data-astryx-theme] *) {
     max-width: none;
   }
 
-  .footerbar {
-    padding: 4px 12px;
-    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    gap: 8px;
-    font-size: 10.5px;
-  }
-  .footerbar .hintline {
-    display: none;
-  }
 }
 
 /* --- touch -------------------------------------------------------------- */
