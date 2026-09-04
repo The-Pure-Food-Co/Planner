@@ -203,7 +203,7 @@ interface PlannerStore {
   deleteLane: (wsId: string, laneId: string) => void
   reorderLanes: (wsId: string, lanes: Lane[]) => void
 
-  addTask: (wsId: string, laneId: string, startDate?: string, initialOwner?: string) => Task
+  addTask: (wsId: string, laneId: string, startDate?: string, initialOwner?: string, initialStatusId?: string) => Task
   updateTask: (wsId: string, task: Task, undoToast?: string) => void
   // Reschedule a task by a day offset and cascade the same shift onto every
   // downstream task that (transitively) depends on it, in one optimistic write.
@@ -226,6 +226,7 @@ interface PlannerStore {
   cancelNewTask: (wsId: string, taskId: string) => void
   reorderTasks: (wsId: string, laneId: string, orderedIds: string[]) => void
   moveToBoardStatus: (wsId: string, statusId: string, taskId: string, markDone?: boolean) => void
+  reorderBoardColumn: (wsId: string, statusId: string, orderedIds: string[]) => void
 
   updateKpiGroups: (groups: KpiGroup[]) => void
   setUserList: (users: string[]) => void
@@ -875,7 +876,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     )
   },
 
-  addTask: (wsId, laneId, startDate, initialOwner) => {
+  addTask: (wsId, laneId, startDate, initialOwner, initialStatusId) => {
     const prev = get().data
     const start = startDate ?? fd(todayD())
     const meId = get().meId
@@ -884,12 +885,22 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     // still wins over that default.
     const owner = initialOwner ?? (meId ? memberName(prev.members, meId) : '')
     const assignees = initialOwner ? [] : meId ? [meId] : []
+    // initialStatusId lets a caller create the task directly into a specific
+    // Board column (e.g. "Add task" clicked from "In Progress") instead of
+    // always landing in whichever column pct:0 falls back to. pct is given a
+    // matching starting value for the two default columns with an inherent
+    // progress meaning (isDone -> 100%; the default "In Progress" id -> 50%,
+    // matched by id since WorkflowState has no isInProgress flag of its own —
+    // custom columns have no such meaning to infer, so they stay at 0%).
+    const targetWs = prev.workspaces.find(w => w.id === wsId)
+    const status = initialStatusId && targetWs ? wsStatuses(targetWs).find(s => s.id === initialStatusId) : undefined
+    const pct = status?.isDone ? 100 : initialStatusId === 'inprog' ? 50 : 0
     const t: Task = {
       id: uuid(), name: 'New task', lane: laneId, owner, assignees,
       reporterId: meId ?? undefined, watchers: [], start,
-      end: fd(addDays(pd(start), 7)), pct: 0, notes: '',
+      end: fd(addDays(pd(start), 7)), pct, notes: '',
       sortIndex: prev.workspaces.find(w => w.id === wsId)?.tasks.filter(x => x.lane === laneId).length ?? 0,
-      boardBucket: null, checklist: [], milestones: [],
+      boardBucket: null, statusId: initialStatusId, checklist: [], milestones: [],
     }
     get().optimistic(
       () => set(s => ({
@@ -1324,10 +1335,11 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     )
   },
 
-  // Board drag-between-columns: moves one card into `statusId`. Board columns
-  // are always sorted by end date (not manually orderable), so there's no
-  // ordering to persist here — just the status change. Pass `markDone` to also
-  // mark it 100% complete when the target column is a done state.
+  // Board drag-between-columns: moves one card into `statusId`. boardBucket
+  // (the card's manual position within a column, see reorderBoardColumn) is
+  // reset to null on a cross-column move — it lands at the end of the new
+  // column until manually repositioned there. Pass `markDone` to also mark it
+  // 100% complete when the target column is a done state.
   moveToBoardStatus: (wsId, statusId, taskId, markDone) => {
     const prev = get().data
     let updated: Task | undefined
@@ -1358,6 +1370,34 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       if (entries.length) db.logActivity(entries)
       if (actorId) db.insertNotifications(buildTaskNotifications(ws, prev.members, before, updated, actorId, actorName))
     }
+  },
+
+  // Board drag-within-a-column: persists manual card order for Board's
+  // "Manual" sort mode into boardBucket (a stringified, zero-padded index —
+  // it's otherwise-unused text column, reused here rather than adding a new
+  // one; see supabase/schema.sql's header for why schema changes against the
+  // shared project are avoided when not needed). Order is scoped per status
+  // column, mirroring reorderTasks' per-lane scoping for the Gantt view.
+  reorderBoardColumn: (wsId, statusId, orderedIds) => {
+    get().optimistic(
+      () => set(s => ({
+        data: {
+          ...s.data,
+          workspaces: s.data.workspaces.map(w => {
+            if (w.id !== wsId) return w
+            const tasks = w.tasks.map(t => {
+              if (taskStatusId(t) !== statusId) return t
+              const idx = orderedIds.indexOf(t.id)
+              return idx >= 0 ? { ...t, boardBucket: String(idx).padStart(6, '0') } : t
+            })
+            return { ...w, tasks }
+          }),
+        },
+      })),
+      () => (get().data.workspaces.find(x => x.id === wsId)?.tasks.filter(t => taskStatusId(t) === statusId) ?? [])
+        .map(t => db.upsertTask(wsId, t)),
+      { failMsg: 'Reorder failed — change reverted' },
+    )
   },
 
   updateKpiGroups: groups => {

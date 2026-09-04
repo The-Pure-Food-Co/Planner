@@ -155,6 +155,14 @@ function PlannerInner() {
     return addTask(wsId, laneId, start)
   }, [addTask])
 
+  // Board-originated adds open the full editor (a workstream is required and
+  // Board has no natural default to pick from, unlike Gantt's lane context)
+  // pre-set to whichever status column's "Add task" was clicked.
+  const handleAddBoardTask = useCallback((wsId: string, laneId: string, start: string | undefined, statusId: string) => {
+    const t = addTask(wsId, laneId, start, undefined, statusId)
+    setModal({ type: 'task', wsId, task: t, isNew: true })
+  }, [addTask])
+
   const handleAddStandaloneTask = useCallback(() => {
     const ws = usePlannerStore.getState().data.workspaces.find(w => w.id === usePlannerStore.getState().ui.ws)
       ?? usePlannerStore.getState().data.workspaces[0]
@@ -217,7 +225,7 @@ function PlannerInner() {
         ) : null}
 
         {tab === 'board' && curWs ? (
-          <Board ws={curWs} onOpenTask={openTaskModal} onAddTask={handleAddTask} />
+          <Board ws={curWs} onOpenTask={openTaskModal} onAddTask={handleAddBoardTask} />
         ) : tab === 'board' && !curWs ? (
           <div className="page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 14 }}>
             No workspace yet — create one from the Workspaces page.
