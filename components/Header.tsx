@@ -110,7 +110,7 @@ export default function Header({ onSearch }: Props) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="gnav-link gws-link"
+                className={`gnav-link gws-link${ui.page === 'ws' && ui.ws === jumpWs.id ? ' active' : ''}`}
                 label={jumpWs.name}
                 onClick={() => openWs(jumpWs.id)}
               />
