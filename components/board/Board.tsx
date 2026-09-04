@@ -326,6 +326,16 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
               <span className="text-xs text-muted-foreground leading-none min-w-5 text-center shrink-0">{ids.length}</span>
             </div>
             <div className="flex items-center gap-1 justify-center shrink-0">
+              {canEdit && onAddTask && (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Add task"
+                  onClick={() => onAddTask(ws.id, ui.stream || '', undefined, status.id)}
+                >
+                  <HugeiconsIcon icon={Add01Icon} className="size-4" />
+                </Button>
+              )}
               {canAdmin && (
                 <DropdownMenu
                   open={menuOpen}
@@ -394,18 +404,6 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
                   </div>
                 )
               })}
-
-              {canEdit && onAddTask && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onAddTask(ws.id, ui.stream || '', undefined, status.id)}
-                  className="gap-2 text-xs h-auto py-1 px-0 self-start hover:bg-background"
-                >
-                  <HugeiconsIcon icon={Add01Icon} className="size-4" />
-                  <span>Add task</span>
-                </Button>
-              )}
             </div>
           </SortableContext>
         </div>
