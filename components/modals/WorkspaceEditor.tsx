@@ -132,11 +132,22 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
     setStatuses(arr)
   }
 
-  const toggleMember = (name: string) =>
-    setWs(w => ({
-      ...w,
-      members: w.members.includes(name) ? w.members.filter(m => m !== name) : [...w.members, name],
-    }))
+  // Checked-in-picker and has-a-role are two separate stores (ws.members vs.
+  // roles/workspace_members) that must stay in lockstep — a person who's
+  // pickable but has no role can't actually see the workspace (RLS blocks
+  // them), which silently stranded people added here in the past. So toggling
+  // membership here also defaults/clears their role alongside it.
+  const toggleMember = (name: string, profileId?: string) =>
+    setWs(w => {
+      const adding = !w.members.includes(name)
+      if (profileId) {
+        setRoles(r => ({ ...r, [profileId]: adding ? (r[profileId] && r[profileId] !== 'none' ? r[profileId] : 'member') : 'none' }))
+      }
+      return {
+        ...w,
+        members: adding ? [...w.members, name] : w.members.filter(m => m !== name),
+      }
+    })
 
   const handleSave = () => {
     updateWorkspace({ ...ws, name: ws.name.trim() || initial.name })
@@ -295,7 +306,7 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                         return (
                           <div key={p.key} className="flex items-center gap-2.5 px-3 py-1.5 border-b border-[color:var(--line)] last:border-b-0">
                             <span
-                              onClick={() => isAdmin && toggleMember(p.name)}
+                              onClick={() => isAdmin && toggleMember(p.name, p.profileId)}
                               className={`flex items-center gap-2.5 flex-1 min-w-0 select-none ${isAdmin ? 'cursor-pointer' : ''}`}
                             >
                               <Checkbox checked={ws.members.includes(p.name)} disabled={!isAdmin} className="pointer-events-none" />
