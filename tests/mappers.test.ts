@@ -60,6 +60,7 @@ describe('rowToMember', () => {
       avatarUrl: 'https://pic',
       isAppAdmin: true,
       isNzTeam: false,
+      isAuTeam: false,
       notificationPrefs: { mutedTypes: ['due'], mutedWorkspaces: ['ws1'] },
     })
   })

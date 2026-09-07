@@ -55,7 +55,7 @@ export default function People({ onAddTask }: { onAddTask?: (owner: string) => v
 
   // The whole roster gets a card — including people pre-provisioned via "Add
   // person" who have no team or tasks yet, so an add is immediately visible.
-  // Scoped to the NZ Team for now (see lib/permissions.ts isNzTeamName).
+  // Scoped to the NZ and AU Teams for now (see lib/permissions.ts isNzTeamName).
   let users = filterNzTeamNames([...allNames], data.members).sort((a, b) => a.localeCompare(b))
   if (ui.person) users = users.filter(u => u === ui.person)
   if (ui.todayOnly) users = users.filter(u =>

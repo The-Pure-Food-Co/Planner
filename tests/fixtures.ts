@@ -45,6 +45,7 @@ export function makeMember(partial: Partial<Member> = {}): Member {
     avatarUrl: '',
     isAppAdmin: false,
     isNzTeam: false,
+    isAuTeam: false,
     ...partial,
   }
 }

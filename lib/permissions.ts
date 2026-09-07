@@ -44,25 +44,25 @@ export function myRole(workspaceId: string | null): Role | null {
 export const canWrite = (role: Role | null): boolean => role === 'admin' || role === 'member'
 export const canAdmin = (role: Role | null): boolean => role === 'admin'
 
-// App is scoped to the NZ Team for now — is_nz_team is written by the shared
-// Auth Hub app (Gantt), not by this repo (see lib/supabase.ts's linkOwnProfile).
-// This filters roster/picker display names to match: a name is
-// shown only if it resolves to a signed-in member who is confirmed NZ Team.
-// Unlinked names (legacy owner strings, pre-provisioned people who haven't signed
-// in) are hidden by default — the app should show NZ Team only, not "everyone we
-// can't rule out."
+// App is scoped to the NZ and AU Teams for now — is_nz_team / is_au_team are
+// written by the shared Auth Hub app (Gantt), not by this repo (see
+// lib/supabase.ts's linkOwnProfile). This filters roster/picker display names
+// to match: a name is shown only if it resolves to a signed-in member who is
+// confirmed NZ or AU Team. Unlinked names (legacy owner strings, pre-provisioned
+// people who haven't signed in) are hidden by default — the app should show
+// NZ/AU Team only, not "everyone we can't rule out."
 export const isNzTeamName = (name: string, members: Member[]): boolean => {
   const m = members.find(m => m.displayName === name)
-  return !!m && m.isNzTeam
+  return !!m && (m.isNzTeam || m.isAuTeam)
 }
 
-/** Filters a list of display names down to NZ Team members (see isNzTeamName). */
+/** Filters a list of display names down to NZ/AU Team members (see isNzTeamName). */
 export const filterNzTeamNames = (names: string[], members: Member[]): string[] =>
   names.filter(n => isNzTeamName(n, members))
 
-/** Filters Member objects down to NZ Team (or unlinked-region-unknown — none here). */
+/** Filters Member objects down to NZ/AU Team (or unlinked-region-unknown — none here). */
 export const filterNzTeamMembers = (members: Member[]): Member[] =>
-  members.filter(m => m.isNzTeam)
+  members.filter(m => m.isNzTeam || m.isAuTeam)
 
 /** Convenience reactive hooks for the common gates. */
 export const useCanWrite = (workspaceId: string | null): boolean => canWrite(useMyRole(workspaceId))
