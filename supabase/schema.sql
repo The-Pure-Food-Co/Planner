@@ -31,6 +31,7 @@ create table if not exists profiles (
   avatar_url          text,
   is_app_admin        boolean     not null default false,
   is_nz_team          boolean     not null default false,
+  is_au_team          boolean     not null default false,
   notification_prefs  jsonb       not null default '{}'::jsonb,
   created_at          timestamptz not null default now()
 );
