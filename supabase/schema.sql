@@ -107,7 +107,7 @@ insert into app_config (key, value) values ('userList', '[]') on conflict do not
 create table if not exists workspace_members (
   workspace_id text not null references workspaces(id) on delete cascade,
   user_id      uuid not null references profiles(id)  on delete cascade,
-  role         text not null default 'member' check (role in ('admin','member','viewer')),
+  role         text not null default 'member' check (role in ('admin','member')),
   primary key (workspace_id, user_id)
 );
 
@@ -230,6 +230,39 @@ create trigger profiles_lock_is_app_admin
   before update on profiles
   for each row execute function public.lock_is_app_admin();
 
+-- The org owner's app-admin status can never be revoked (by themselves or any
+-- other app admin) and their profile row can never be deleted. Belt-and-braces
+-- alongside the app-side UI lock in WorkspaceEditor.tsx.
+create or replace function public.lock_owner_admin()
+  returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.email = 'kees@thepurefoodco.com' and new.is_app_admin = false then
+    new.is_app_admin := true;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_lock_owner_admin on profiles;
+create trigger profiles_lock_owner_admin
+  before update on profiles
+  for each row execute function public.lock_owner_admin();
+
+create or replace function public.prevent_owner_delete()
+  returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if old.email = 'kees@thepurefoodco.com' then
+    raise exception 'cannot delete the protected owner profile';
+  end if;
+  return old;
+end;
+$$;
+
+drop trigger if exists profiles_prevent_owner_delete on profiles;
+create trigger profiles_prevent_owner_delete
+  before delete on profiles
+  for each row execute function public.prevent_owner_delete();
+
 -- Due-date reminders: a daily pg_cron job fans out 'due' notifications
 -- server-side. Fires for each assignee of a not-done, dated task when, on the
 -- New Zealand calendar day (HQ timezone):
@@ -313,17 +346,20 @@ create policy profiles_update on profiles
   using ( auth_id = auth.uid() or email = auth.jwt()->>'email' or public.is_app_admin() )
   with check ( auth_id = auth.uid() or email = auth.jwt()->>'email' or public.is_app_admin() );
 
--- workspaces: members read, app admins create, workspace admins update/delete.
-create policy ws_select on workspaces for select to authenticated using ( public.is_ws_member(id) );
+-- workspaces: everyone signed in reads every workspace (intentional — there is
+-- no "private workspace" concept), app admins create, workspace admins
+-- (role = 'admin' in workspace_members, or app admins) update/delete.
+create policy ws_select on workspaces for select to authenticated using ( true );
 create policy ws_insert on workspaces for insert to authenticated with check ( public.is_app_admin() );
 create policy ws_update on workspaces for update to authenticated using ( public.is_ws_admin(id) ) with check ( public.is_ws_admin(id) );
 create policy ws_delete on workspaces for delete to authenticated using ( public.is_ws_admin(id) );
 
--- lanes / tasks: members read, writers (member/admin role) write.
-create policy lane_select on lanes for select to authenticated using ( public.is_ws_member(workspace_id) );
+-- lanes / tasks: everyone signed in reads (see workspaces above); writers
+-- (member/admin role in that workspace, or an app admin) write.
+create policy lane_select on lanes for select to authenticated using ( true );
 create policy lane_write  on lanes for all    to authenticated using ( public.is_ws_writer(workspace_id) ) with check ( public.is_ws_writer(workspace_id) );
 
-create policy task_select on tasks for select to authenticated using ( public.is_ws_member(workspace_id) );
+create policy task_select on tasks for select to authenticated using ( true );
 create policy task_write  on tasks for all    to authenticated using ( public.is_ws_writer(workspace_id) ) with check ( public.is_ws_writer(workspace_id) );
 
 -- kpi_groups / app_config: app-wide, everyone reads, only app admins write.
@@ -333,12 +369,13 @@ create policy kpi_write  on kpi_groups for all    to authenticated using ( publi
 create policy cfg_select on app_config for select to authenticated using ( true );
 create policy cfg_write  on app_config for all    to authenticated using ( public.is_app_admin() ) with check ( public.is_app_admin() );
 
--- workspace_members: visible to members, managed by workspace admins.
-create policy wm_select on workspace_members for select to authenticated using ( public.is_ws_member(workspace_id) );
+-- workspace_members: visible to everyone signed in, managed by workspace admins
+-- (or app admins, via is_ws_admin).
+create policy wm_select on workspace_members for select to authenticated using ( true );
 create policy wm_write  on workspace_members for all    to authenticated using ( public.is_ws_admin(workspace_id) ) with check ( public.is_ws_admin(workspace_id) );
 
--- views: workspace members read, writers create, owner or workspace admin deletes.
-create policy views_select on views for select to authenticated using ( public.is_ws_member(workspace_id) );
+-- views: everyone signed in reads, writers create, owner or workspace admin deletes.
+create policy views_select on views for select to authenticated using ( true );
 create policy views_insert on views for insert to authenticated with check ( public.is_ws_writer(workspace_id) );
 create policy views_delete on views for delete to authenticated using (
   public.is_ws_admin(workspace_id) or owner_id in (select id from profiles where auth_id = auth.uid())
@@ -374,9 +411,9 @@ create policy todos_delete on todos for delete to authenticated using (
   owner_id in (select id from profiles where auth_id = auth.uid())
 );
 
--- activity_log: readable by workspace members, inserted by the app on behalf
+-- activity_log: readable by everyone signed in, inserted by the app on behalf
 -- of the acting user (no direct-write restriction beyond being signed in).
-create policy activity_select on activity_log for select to authenticated using ( public.is_ws_member(workspace_id) );
+create policy activity_select on activity_log for select to authenticated using ( true );
 create policy activity_insert on activity_log for insert to authenticated with check ( public.is_ws_member(workspace_id) );
 
 -- lane_templates: app-wide, everyone reads, everyone signed in can manage

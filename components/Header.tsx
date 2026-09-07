@@ -47,21 +47,18 @@ export default function Header({ onSearch }: Props) {
   const curWs = data.workspaces.find(w => w.id === ui.ws) ?? data.workspaces[0]
   const myRole = useMyRole(curWs?.id ?? null)
 
-  // Workspaces the user can actually navigate into: real membership in live
-  // mode, everything in local/seed mode (no server to scope against — see
-  // lib/permissions.ts's resolveRole, which grants full access the same way).
   const isAppAdmin = !live || !!data.members.find(m => m.id === meId)?.isAppAdmin
-  const myWorkspaces = isAppAdmin
-    ? data.workspaces
-    : data.workspaces.filter(w => data.memberships.some(m => m.workspaceId === w.id && m.userId === meId))
 
+  // Every signed-in user can read every workspace (see supabase/schema.sql —
+  // no "private workspace" concept), so the switcher lists them all rather
+  // than filtering to membership rows, matching Teams.tsx's workspace list.
   // Defaults to the most recently visited workspace (ui.ws, already persisted
   // by openWs) so the button target survives reloads, falling back to the
-  // first workspace the user has access to.
-  const jumpWs = (myWorkspaces.find(w => w.id === ui.ws) ?? myWorkspaces[0]) ?? null
+  // first workspace overall.
+  const jumpWs = (data.workspaces.find(w => w.id === ui.ws) ?? data.workspaces[0]) ?? null
 
   const roleLabel = live
-    ? (me?.isAppAdmin ? 'App admin' : myRole === 'admin' ? 'Workspace admin' : myRole === 'member' ? 'Member' : 'Viewer')
+    ? (me?.isAppAdmin ? 'App admin' : myRole === 'admin' ? 'Workspace admin' : myRole === 'member' ? 'Member' : 'No access')
     : 'Local mode'
 
   const myOpenCount = data.workspaces.reduce(
@@ -142,7 +139,7 @@ export default function Header({ onSearch }: Props) {
                 />
                 <DropdownMenuContent align="start" className="min-w-[200px]">
                   <DropdownMenuGroup>
-                    {myWorkspaces.map(w => (
+                    {data.workspaces.map(w => (
                       <DropdownMenuItem key={w.id} onClick={() => openWs(w.id)}>
                         {w.name}
                       </DropdownMenuItem>

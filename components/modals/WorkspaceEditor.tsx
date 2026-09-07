@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Settings, Save, Trash2, Plus, X, Shield, User, Eye, Ban, SlidersHorizontal, ListChecks, Users } from 'lucide-react'
+import { Settings, Save, Trash2, Plus, X, Shield, User, Ban, SlidersHorizontal, ListChecks, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Tab, TabList } from '@astryxdesign/core/TabList'
 import { TextInput } from '@astryxdesign/core/TextInput'
@@ -8,7 +8,7 @@ import { Pagination } from '@astryxdesign/core/Pagination'
 import { Badge } from '@astryxdesign/core/Badge'
 import { CheckboxList, CheckboxListItem } from '@astryxdesign/core/CheckboxList'
 import { usePlannerStore } from '@/store/plannerStore'
-import { useCanAdmin, isNzTeamName, filterNzTeamMembers } from '@/lib/permissions'
+import { useCanAdmin, useIsAppAdmin, isNzTeamName, filterNzTeamMembers } from '@/lib/permissions'
 import { uuid, wsStatuses, avatarByName } from '@/lib/utils'
 import type { Workspace, Role, WorkflowState } from '@/lib/types'
 import Avatar from '@/components/Avatar'
@@ -33,6 +33,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog'
 import { WORKSPACE_ICONS, getWorkspaceIcon } from '@/lib/workspace-icons'
 
 interface Props {
@@ -42,17 +52,19 @@ interface Props {
 
 type TabId = 'general' | 'workflow' | 'people'
 
+// The org owner's app-admin status is permanently locked — enforced again at
+// the database level (lock_owner_admin trigger in supabase/schema.sql).
+const PROTECTED_OWNER_EMAIL = 'kees@thepurefoodco.com'
+
 // Access levels shown in the per-member role picker, most → least privileged.
 const ROLE_OPTIONS: { value: Role | 'none'; label: string; Icon: LucideIcon }[] = [
   { value: 'admin', label: 'Admin', Icon: Shield },
   { value: 'member', label: 'Member', Icon: User },
-  { value: 'viewer', label: 'Viewer', Icon: Eye },
   { value: 'none', label: 'No access', Icon: Ban },
 ]
-const ROLE_BADGE_VARIANT: Record<Role | 'none', 'purple' | 'blue' | 'teal' | 'neutral'> = {
+const ROLE_BADGE_VARIANT: Record<Role | 'none', 'purple' | 'blue' | 'neutral'> = {
   admin: 'purple',
   member: 'blue',
-  viewer: 'teal',
   none: 'neutral',
 }
 
@@ -63,6 +75,7 @@ const ADMIN_PAGE_SIZE = 8
 export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
   const { updateWorkspace, deleteWorkspace, data, setMembership, removeMembership, setAppAdmin } = usePlannerStore()
   const isAdmin = useCanAdmin(initial.id)
+  const isAppAdmin = useIsAppAdmin()
   const [tab, setTab] = useState<TabId>('general')
   const [ws, setWs] = useState<Workspace>({ ...initial, members: [...initial.members], statuses: wsStatuses(initial) })
 
@@ -78,6 +91,10 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
   const [appAdmins, setAppAdmins] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(data.members.map(m => [m.id, m.isAppAdmin]))
   )
+  // Removing app-admin status is high-blast-radius (loses control of every
+  // workspace/KPI in the app), so it's confirmed explicitly rather than
+  // applied the instant the checkbox is unticked.
+  const [pendingAdminRemoval, setPendingAdminRemoval] = useState<{ id: string; name: string } | null>(null)
 
   // One row per person: signed-in profiles plus roster-only names (added
   // manually before their first sign-in), matched up by display name.
@@ -382,7 +399,7 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                 </>
               )}
 
-              {isAdmin && data.members.length > 0 && (
+              {isAppAdmin && data.members.length > 0 && (
                 <div className="mt-5">
                   <label className={SECTION_LABEL}>App admins</label>
                   <span className="block text-xs text-[color:var(--muted)] mb-1.5">
@@ -412,15 +429,39 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                       value={pagedAdminMembers.filter(m => appAdmins[m.id]).map(m => m.id)}
                       onChange={vals => {
                         const shown = new Set(pagedAdminMembers.map(m => m.id))
+                        const nextSet = new Set(vals)
+                        // Removals are confirmed one at a time via the alert dialog
+                        // below rather than applied immediately; additions apply
+                        // right away. The owner is never removable, so silently
+                        // drop any attempt to untick them (checkbox is disabled,
+                        // but guard here too in case of a stale event).
+                        for (const m of pagedAdminMembers) {
+                          const wasChecked = appAdmins[m.id] ?? false
+                          const nowChecked = nextSet.has(m.id)
+                          if (wasChecked && !nowChecked && m.email !== PROTECTED_OWNER_EMAIL) {
+                            setPendingAdminRemoval({ id: m.id, name: m.displayName })
+                            return
+                          }
+                        }
                         setAppAdmins(a => {
                           const next = { ...a }
-                          shown.forEach(id => { next[id] = vals.includes(id) })
+                          shown.forEach(id => {
+                            const m = pagedAdminMembers.find(x => x.id === id)
+                            if (m?.email === PROTECTED_OWNER_EMAIL) return
+                            next[id] = vals.includes(id)
+                          })
                           return next
                         })
                       }}
                     >
                       {pagedAdminMembers.map(m => (
-                        <CheckboxListItem key={m.id} value={m.id} label={m.displayName} description={m.email} />
+                        <CheckboxListItem
+                          key={m.id}
+                          value={m.id}
+                          label={m.displayName}
+                          description={m.email === PROTECTED_OWNER_EMAIL ? `${m.email} · protected owner` : m.email}
+                          isDisabled={m.email === PROTECTED_OWNER_EMAIL}
+                        />
                       ))}
                     </CheckboxList>
                   )}
@@ -438,6 +479,30 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                   )}
                 </div>
               )}
+
+              <AlertDialog open={!!pendingAdminRemoval} onOpenChange={open => !open && setPendingAdminRemoval(null)}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Remove {pendingAdminRemoval?.name} as app admin?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      They&rsquo;ll lose the ability to manage every workspace and KPIs app-wide. This takes effect when you save.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      onClick={() => {
+                        if (!pendingAdminRemoval) return
+                        setAppAdmins(a => ({ ...a, [pendingAdminRemoval.id]: false }))
+                        setPendingAdminRemoval(null)
+                      }}
+                    >
+                      Remove
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
 
