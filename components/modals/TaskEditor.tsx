@@ -905,6 +905,7 @@ export default function TaskEditor({
                     <Button
                       variant="ghost"
                       size="icon-xs"
+                      className="relative z-10"
                       onClick={commitNewLane}
                       title="Add"
                     >
@@ -913,6 +914,7 @@ export default function TaskEditor({
                     <Button
                       variant="ghost"
                       size="icon-xs"
+                      className="relative z-10"
                       onClick={() => setNewLaneName(null)}
                       title="Cancel"
                     >
@@ -1560,7 +1562,7 @@ export default function TaskEditor({
                           <Button
                             variant="ghost"
                             size="icon-xs"
-                            className="del"
+                            className="del relative z-10"
                             onClick={() =>
                               setCheck((prev) => prev.filter((_, j) => j !== i))
                             }
@@ -1842,6 +1844,7 @@ export default function TaskEditor({
                             <Button
                               variant="ghost"
                               size="icon-xs"
+                              className="relative z-10"
                               disabled={!l.url.trim()}
                               onClick={() => finishLink(l.id)}
                               title="Done"
@@ -1851,6 +1854,7 @@ export default function TaskEditor({
                             <Button
                               variant="ghost"
                               size="icon-xs"
+                              className="relative z-10"
                               onClick={() =>
                                 setLinks((prev) =>
                                   prev.filter((_, j) => j !== i)
