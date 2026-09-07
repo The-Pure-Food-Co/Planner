@@ -1,5 +1,5 @@
 export type RagStatus = 'none' | 'green' | 'amber' | 'red'
-export type Role = 'admin' | 'member' | 'viewer'
+export type Role = 'admin' | 'member'
 export type ZoomLevel = 'days' | 'weeks' | 'months'
 export type HomeTab = 'teams' | 'projects' | 'milestones' | 'kpis' | 'people'
 export type WsView = 'gantt' | 'board'

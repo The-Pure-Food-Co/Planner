@@ -61,7 +61,7 @@ export default function Header({ onSearch }: Props) {
   const jumpWs = (myWorkspaces.find(w => w.id === ui.ws) ?? myWorkspaces[0]) ?? null
 
   const roleLabel = live
-    ? (me?.isAppAdmin ? 'App admin' : myRole === 'admin' ? 'Workspace admin' : myRole === 'member' ? 'Member' : 'Viewer')
+    ? (me?.isAppAdmin ? 'App admin' : myRole === 'admin' ? 'Workspace admin' : myRole === 'member' ? 'Member' : 'No access')
     : 'Local mode'
 
   const myOpenCount = data.workspaces.reduce(
