@@ -73,7 +73,7 @@ const PEOPLE_PAGE_SIZE = 6
 const ADMIN_PAGE_SIZE = 8
 
 export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
-  const { updateWorkspace, deleteWorkspace, data, setMembership, removeMembership, setAppAdmin } = usePlannerStore()
+  const { updateWorkspace, deleteWorkspace, data, setMembership, removeMembership, setAppAdmin, meId } = usePlannerStore()
   const isAdmin = useCanAdmin(initial.id)
   const isAppAdmin = useIsAppAdmin()
   const [tab, setTab] = useState<TabId>('general')
@@ -176,6 +176,7 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
       else setMembership(initial.id, m.id, after)
     }
     for (const m of data.members) {
+      if (m.email === PROTECTED_OWNER_EMAIL || m.id === meId) continue
       const after = appAdmins[m.id] ?? false
       if (m.isAppAdmin !== after) setAppAdmin(m.id, after)
     }
@@ -434,11 +435,13 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                         // below rather than applied immediately; additions apply
                         // right away. The owner is never removable, so silently
                         // drop any attempt to untick them (checkbox is disabled,
-                        // but guard here too in case of a stale event).
+                        // but guard here too in case of a stale event). Same for
+                        // your own row: self-removal is blocked so an app admin
+                        // can never lock themselves out of the People/KPIs panels.
                         for (const m of pagedAdminMembers) {
                           const wasChecked = appAdmins[m.id] ?? false
                           const nowChecked = nextSet.has(m.id)
-                          if (wasChecked && !nowChecked && m.email !== PROTECTED_OWNER_EMAIL) {
+                          if (wasChecked && !nowChecked && m.email !== PROTECTED_OWNER_EMAIL && m.id !== meId) {
                             setPendingAdminRemoval({ id: m.id, name: m.displayName })
                             return
                           }
@@ -447,7 +450,7 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                           const next = { ...a }
                           shown.forEach(id => {
                             const m = pagedAdminMembers.find(x => x.id === id)
-                            if (m?.email === PROTECTED_OWNER_EMAIL) return
+                            if (m?.email === PROTECTED_OWNER_EMAIL || m?.id === meId) return
                             next[id] = vals.includes(id)
                           })
                           return next
@@ -459,8 +462,12 @@ export default function WorkspaceEditor({ ws: initial, onClose }: Props) {
                           key={m.id}
                           value={m.id}
                           label={m.displayName}
-                          description={m.email === PROTECTED_OWNER_EMAIL ? `${m.email} · protected owner` : m.email}
-                          isDisabled={m.email === PROTECTED_OWNER_EMAIL}
+                          description={
+                            m.email === PROTECTED_OWNER_EMAIL ? `${m.email} · protected owner`
+                              : m.id === meId ? `${m.email} · that's you`
+                              : m.email
+                          }
+                          isDisabled={m.email === PROTECTED_OWNER_EMAIL || m.id === meId}
                         />
                       ))}
                     </CheckboxList>

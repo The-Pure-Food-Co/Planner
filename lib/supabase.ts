@@ -319,8 +319,13 @@ export const db = {
       { onConflict: 'email' }
     ),
 
+  // Selects the row back after writing: the lock_owner_admin / lock_is_app_admin
+  // triggers (schema.sql) can silently rewrite is_app_admin server-side (e.g. the
+  // org owner's row can never be demoted), so a plain update() can report success
+  // while the value it asked for didn't actually land — the caller reconciles
+  // local state against is_app_admin in the returned row, not the requested one.
   setAppAdmin: (profileId: string, isAppAdmin: boolean) =>
-    supabase?.from('profiles').update({ is_app_admin: isAppAdmin }).eq('id', profileId),
+    supabase?.from('profiles').update({ is_app_admin: isAppAdmin }).eq('id', profileId).select('id, is_app_admin').single(),
 
   // Pre-provision a roster entry before the person's first sign-in (they link to
   // it by email via linkOwnProfile when they do). Insert — never upsert — so an
