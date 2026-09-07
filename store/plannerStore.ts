@@ -1470,14 +1470,35 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     )
   },
 
+  // Not routed through optimistic(): the lock_owner_admin / lock_is_app_admin
+  // triggers (supabase/schema.sql) can silently rewrite is_app_admin server-side
+  // (the org owner's row can never be demoted), so a successful write doesn't
+  // guarantee the requested value actually landed. db.setAppAdmin selects the row
+  // back, and local state is reconciled to whatever the DB actually stored —
+  // not the value the user requested — so the UI never drifts from reality.
   setAppAdmin: (userId, isAppAdmin) => {
-    get().optimistic(
-      () => set(s => ({
-        data: { ...s.data, members: s.data.members.map(m => m.id === userId ? { ...m, isAppAdmin } : m) },
-      })),
-      () => db.setAppAdmin(userId, isAppAdmin),
-      { failMsg: 'Save failed — reverted' },
-    )
+    const prev = get().data
+    set(s => ({
+      data: { ...s.data, members: s.data.members.map(m => m.id === userId ? { ...m, isAppAdmin } : m) },
+    }))
+    get().commit()
+    void Promise.resolve(db.setAppAdmin(userId, isAppAdmin)).then(result => {
+      if (!result) return
+      if (result.error || !result.data) {
+        set({ data: prev })
+        get().commit()
+        get().toast('Save failed — reverted')
+        return
+      }
+      const actual = !!result.data.is_app_admin
+      if (actual !== isAppAdmin) {
+        set(s => ({
+          data: { ...s.data, members: s.data.members.map(m => m.id === userId ? { ...m, isAppAdmin: actual } : m) },
+        }))
+        get().commit()
+        get().toast('That account’s app-admin status is locked and can’t be changed')
+      }
+    })
   },
 
   saveView: name => {
