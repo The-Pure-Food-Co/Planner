@@ -596,15 +596,19 @@ export default function Gantt({
   // reactive to realtime template inserts/deletes from other users.
   const laneTemplates = usePlannerStore((s) => s.data.laneTemplates);
   const canEdit = useCanWrite(ws.id);
-  // Assignee options for the sidebar's click-to-multiselect avatar/name area —
-  // scoped to this workspace's own People list, same as TaskEditor's picker.
+  // Assignee options for the sidebar's click-to-multiselect avatar/name area.
+  // `allAssigneeOptions` resolves names/avatars for anyone already assigned
+  // (even outside the workspace); each row's own picker filters this down to
+  // ws.members plus that task's current assignees (see per-row assigneeOptions
+  // below), so an existing assignee outside the workspace (e.g. an app admin
+  // who created the task) still shows up checked and can be unticked, matching
+  // TaskEditor's picker.
   const wsMemberNames = useMemo(() => new Set(ws.members ?? []), [ws.members]);
-  const assigneeOptions = useMemo(() => {
-    const all = data.members.length
+  const allAssigneeOptions = useMemo(() => {
+    return data.members.length
       ? filterNzTeamMembers(data.members).map((m) => ({ id: m.id, name: m.displayName, avatarUrl: m.avatarUrl }))
       : filterNzTeamNames(data.userList, data.members).map((u) => ({ id: u, name: u, avatarUrl: '' }));
-    return all.filter((o) => wsMemberNames.has(o.name));
-  }, [data.members, data.userList, wsMemberNames]);
+  }, [data.members, data.userList]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const hdrPan = useRef<{
     x0: number;
@@ -1300,9 +1304,12 @@ export default function Gantt({
                 const selectedIds = t.assignees?.length
                   ? t.assignees
                   : t.owner
-                    ? [assigneeOptions.find((o) => o.name === t.owner)?.id ?? t.owner]
+                    ? [allAssigneeOptions.find((o) => o.name === t.owner)?.id ?? t.owner]
                     : [];
-                const nameOf = (id: string) => assigneeOptions.find((o) => o.id === id)?.name ?? id;
+                const assigneeOptions = allAssigneeOptions.filter(
+                  (o) => wsMemberNames.has(o.name) || selectedIds.includes(o.id)
+                );
+                const nameOf = (id: string) => allAssigneeOptions.find((o) => o.id === id)?.name ?? id;
                 const toggleAssignee = (id: string) => {
                   const next = selectedIds.includes(id)
                     ? selectedIds.filter((x) => x !== id)
