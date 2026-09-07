@@ -311,9 +311,12 @@ export default function TaskEditor({
 
   // Assignee options: real profiles when available, else legacy name roster.
   // `allAssigneeOptions` resolves names/avatars for anyone already assigned
-  // (even if they've since left the workspace); the picker itself only offers
+  // (even if they've since left the workspace); the picker itself offers
   // `assigneeOptions`, scoped to this workspace's own People list (ws.members)
-  // so a task can only be newly assigned to someone who belongs here.
+  // plus anyone currently assigned — so a task can only be newly assigned to
+  // someone who belongs here, but an existing assignee outside the workspace
+  // (e.g. an app admin who created the task and got auto-assigned) still shows
+  // up checked and can be unticked, instead of being invisible and stuck.
   const members = usePlannerStore((s) => s.data.members);
   const userList = usePlannerStore((s) => s.data.userList);
   const allAssigneeOptions = members.length
@@ -323,8 +326,6 @@ export default function TaskEditor({
         avatarUrl: m.avatarUrl,
       }))
     : filterNzTeamNames(userList, members).map((u) => ({ id: u, name: u, avatarUrl: '' })); // fallback: id === name
-  const wsMemberNames = new Set(ws.members ?? []);
-  const assigneeOptions = allAssigneeOptions.filter((o) => wsMemberNames.has(o.name));
   // Owner-name fallback upgrades to the matching profile id when one exists, so
   // quick-create flows that only set `owner` (e.g. People "+ Task") prefill the
   // picker — saving then diffs assignees and fires the 'assigned' notification.
@@ -333,6 +334,10 @@ export default function TaskEditor({
     : t.owner
       ? [allAssigneeOptions.find((o) => o.name === t.owner)?.id ?? t.owner]
       : [];
+  const wsMemberNames = new Set(ws.members ?? []);
+  const assigneeOptions = allAssigneeOptions.filter(
+    (o) => wsMemberNames.has(o.name) || selectedIds.includes(o.id)
+  );
   const nameOf = (id: string) =>
     allAssigneeOptions.find((o) => o.id === id)?.name ?? id;
   const avatarOf = (id: string) =>
@@ -1654,7 +1659,7 @@ export default function TaskEditor({
                           <Button
                             variant="ghost"
                             size="icon-xs"
-                            className="del"
+                            className="del relative z-10"
                             onClick={() =>
                               setMs((prev) => prev.filter((_, j) => j !== i))
                             }
