@@ -141,7 +141,7 @@ export function rowToTodo(r: Record<string, any>): Todo {
 }
 
 export function rowToTodoList(r: Record<string, any>): TodoList {
-  return { id: r.id, name: r.name, sortIndex: r.sort_index ?? 0 }
+  return { id: r.id, name: r.name, color: r.color ?? '#C63663', sortIndex: r.sort_index ?? 0 }
 }
 
 export function rowToNotification(r: Record<string, any>): AppNotification {
@@ -506,18 +506,20 @@ export const db = {
     return data.map(rowToTodoList)
   },
 
-  addTodoList: async (ownerId: string, name: string, sortIndex: number): Promise<TodoList | null> => {
+  addTodoList: async (
+    ownerId: string, name: string, sortIndex: number, color = '#C63663',
+  ): Promise<TodoList | null> => {
     if (!supabase) return null
     const { data, error } = await supabase
       .from('todo_lists')
-      .insert({ owner_id: ownerId, name, sort_index: sortIndex })
+      .insert({ owner_id: ownerId, name, sort_index: sortIndex, color })
       .select()
       .single()
     return error || !data ? null : rowToTodoList(data)
   },
 
-  renameTodoList: (id: string, name: string) =>
-    supabase?.from('todo_lists').update({ name }).eq('id', id),
+  updateTodoList: (id: string, patch: { name?: string; color?: string }) =>
+    supabase?.from('todo_lists').update(patch).eq('id', id),
 
   // todos.list_id is ON DELETE CASCADE, so the list's items go with it.
   deleteTodoList: (id: string) =>

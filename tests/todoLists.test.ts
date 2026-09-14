@@ -17,12 +17,15 @@ describe('todo list mappers', () => {
   })
 
   it('maps a todo_lists row', () => {
-    const l = rowToTodoList({ id: 'list1', name: 'FG Freezer', sort_index: 3 })
-    expect(l).toEqual({ id: 'list1', name: 'FG Freezer', sortIndex: 3 })
+    const l = rowToTodoList({ id: 'list1', name: 'FG Freezer', color: '#3B82F6', sort_index: 3 })
+    expect(l).toEqual({ id: 'list1', name: 'FG Freezer', color: '#3B82F6', sortIndex: 3 })
   })
 
-  it('defaults a list sort_index to 0', () => {
-    expect(rowToTodoList({ id: 'l', name: 'X' }).sortIndex).toBe(0)
+  it('defaults sort_index and colour when absent', () => {
+    const l = rowToTodoList({ id: 'l', name: 'X' })
+    expect(l.sortIndex).toBe(0)
+    // Beetroot — the app's primary brand colour, matching the column default.
+    expect(l.color).toBe('#C63663')
   })
 })
 
