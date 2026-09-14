@@ -251,6 +251,10 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
   // Presentational card body, shared by the sortable card and the drag overlay.
   const CardBody = ({ task, column }: { task: Task; column: WorkflowState | undefined }) => {
     const isCompleted = !!column?.isDone || (task.pct || 0) >= 100
+    // Same-named tasks in different workstreams are indistinguishable on the
+    // board (which, unlike the Gantt, has no lane rows), so each card carries
+    // its workstream. Shown even when filtered to one stream, by request.
+    const lane = task.lane ? ws.lanes.find(l => l.id === task.lane) : undefined
 
     return (
       <div
@@ -278,6 +282,20 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
             <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 shrink-0 text-green-500" />
           )}
         </div>
+        {lane && (
+          <div className="mt-1.5 flex">
+            <span
+              className="max-w-full truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight"
+              style={{
+                background: `color-mix(in srgb, ${lane.color} 18%, var(--background))`,
+                color: `color-mix(in srgb, ${lane.color} 75%, var(--foreground))`,
+              }}
+              title={lane.label}
+            >
+              {lane.label}
+            </span>
+          </div>
+        )}
       </div>
     )
   }

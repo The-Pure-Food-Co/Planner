@@ -64,7 +64,7 @@ import {
 import { FlagIcon as FlagOutlineIcon } from '@heroicons/react/24/outline'
 import { db } from '@/lib/supabase'
 import { todayD, fmtDueRelative, taskAssignedTo, taskStatusId, wsStatuses, dueBucketOf, pd, mondayOf } from '@/lib/utils'
-import type { Task, Todo, Workspace } from '@/lib/types'
+import type { Task, Todo, TodoList, Workspace } from '@/lib/types'
 
 interface Row { t: Task; w: Workspace }
 
@@ -92,6 +92,14 @@ const progressVariant = (pct: number): ProgressBarVariant =>
 // devices/sessions for the signed-in user.
 type TodoFilter = 'all' | 'important' | 'completed'
 type TodoSort = 'manual' | 'date'
+
+// Which checklist was last open. UI-only, so it lives in localStorage next to
+// the planner's other UI state rather than in the database.
+const TODO_LIST_KEY = 'purefoods-planner-todo-list'
+
+// Same brand palette the workspace/workstream pickers offer, so a checklist
+// colour reads as part of the same system.
+const LIST_PALETTE = ['#C63663', '#93328E', '#F8485E', '#6BA539', '#3B82F6', '#F59E0B', '#14B8A6', '#8B5CF6']
 
 // Placeholder rows shown while the to-do fetch is in flight, sized to match
 // TodoRowBody's layout so real rows don't visibly jump in once loaded.
@@ -436,23 +444,56 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
   const [sort, setSort] = useState<TodoSort>('manual')
   const [newTaskText, setNewTaskText] = useState('')
   const [newTaskDate, setNewTaskDate] = useState<string | null>(null)
+  // Named checklists. Exactly one is open at a time — there's no combined
+  // view — and the panel reopens on whichever was last used.
+  const [lists, setLists] = useState<TodoList[]>([])
+  const [activeListId, setActiveListId] = useState<string | null>(null)
+  // Naming a checklist happens in an in-app dialog rather than window.prompt,
+  // which blocks the page and looks like a browser error. `listDialog` is the
+  // open dialog: 'new' creates, 'rename' edits the list it carries.
+  const [listDialog, setListDialog] = useState<
+    { mode: 'new' } | { mode: 'rename'; list: TodoList } | null
+  >(null)
+  const [listDraft, setListDraft] = useState('')
+  const [listColorDraft, setListColorDraft] = useState(LIST_PALETTE[0])
+  const [deletingList, setDeletingList] = useState<TodoList | null>(null)
   const toast = usePlannerStore(s => s.toast)
   const today = todayD()
 
   useEffect(() => {
-    if (!meId) { setTodos([]); setTodosLoading(false); return }
+    if (!meId) { setTodos([]); setLists([]); setTodosLoading(false); return }
     setTodosLoading(true)
-    db.fetchMyTodos(meId).then(t => {
-      setTodos(t); setTodosLoading(false)
+    Promise.all([db.fetchMyTodos(meId), db.fetchMyTodoLists(meId)]).then(([t, l]) => {
+      setTodos(t)
+      setLists(l)
+      const remembered = typeof window !== 'undefined'
+        ? window.localStorage.getItem(TODO_LIST_KEY)
+        : null
+      // Fall back to the first list when the remembered one is gone (deleted,
+      // or belonging to another device). `null` means the pre-migration
+      // bucket, which only shows while it still holds items.
+      const valid = remembered && l.some(x => x.id === remembered)
+      setActiveListId(valid ? remembered : (l[0]?.id ?? null))
+      setTodosLoading(false)
     })
   }, [meId])
+
+  // Remember the open list across sessions, alongside the other UI-only state.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeListId) return
+    window.localStorage.setItem(TODO_LIST_KEY, activeListId)
+  }, [activeListId])
 
   // Creates a task from the dialog with its due date and flag.
   const createTodo = async (
     text: string, dueDate: string | null, important: boolean,
   ) => {
     if (!meId) return
-    const created = await db.addTodo(meId, text, todos.length, dueDate, important)
+    // New items land in the list that's open — there's no combined view to
+    // add from, so the current list is always the right home. sortIndex counts
+    // within that list, not across every list the user owns.
+    const nextIndex = todos.filter(t => (t.listId ?? null) === activeListId).length
+    const created = await db.addTodo(meId, text, nextIndex, dueDate, important, activeListId)
     if (created) setTodos(prev => [...prev, created])
     else toast('Save failed — could not add task')
   }
@@ -503,11 +544,58 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
     })
   }
 
+  const activeList = lists.find(l => l.id === activeListId)
+  // Tabs are the real lists plus, only while any survive, a bucket for rows
+  // predating the lists migration so they stay reachable rather than hidden.
+  const tabLists: Array<{ id: string | null; name: string; color: string }> = [
+    ...lists.map(l => ({ id: l.id as string | null, name: l.name, color: l.color })),
+    ...(todos.some(t => (t.listId ?? null) === null)
+      ? [{ id: null, name: 'Unfiled', color: '#7A8899' }]
+      : []),
+  ]
+
+  const createList = async (name: string, color: string) => {
+    if (!meId) return
+    const created = await db.addTodoList(meId, name, lists.length, color)
+    if (!created) { toast('Save failed — could not create checklist'); return }
+    setLists(prev => [...prev, created])
+    setActiveListId(created.id)
+  }
+
+  const editList = async (list: TodoList, name: string, color: string) => {
+    if (name === list.name && color === list.color) return
+    const prev = lists
+    setLists(p => p.map(l => (l.id === list.id ? { ...l, name, color } : l)))
+    const result = await db.updateTodoList(list.id, { name, color })
+    if (result?.error) {
+      setLists(prev)
+      toast('Save failed — change reverted')
+    }
+  }
+
+  const removeList = async (list: TodoList) => {
+    const prevLists = lists
+    const prevTodos = todos
+    const remaining = lists.filter(l => l.id !== list.id)
+    setLists(remaining)
+    setTodos(p => p.filter(t => (t.listId ?? null) !== list.id))
+    setActiveListId(remaining[0]?.id ?? null)
+    const result = await db.deleteTodoList(list.id)
+    if (result?.error) {
+      setLists(prevLists)
+      setTodos(prevTodos)
+      setActiveListId(list.id)
+      toast('Delete failed — change reverted')
+    }
+  }
+
   const clearCompleted = async () => {
     if (!meId) return
     const prev = todos
-    setTodos(p => p.filter(t => !t.done))
-    const result = await db.clearCompletedTodos(meId)
+    // Only the open list is cleared, so local state must match the delete's
+    // scope — filtering every done item would blank other lists on screen.
+    setTodos(p => p.filter(t => !(t.done && (t.listId ?? null) === activeListId)))
+    const result = await db.clearCompletedTodos(meId, activeListId)
     if (result?.error) {
       setTodos(prev)
       toast('Delete failed — change reverted')
@@ -536,10 +624,13 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
 
   // Reindexes the full list after a drag so sort_index stays contiguous
   // across both active and completed items, then persists only what moved.
+  // `merged` is the open list only, so its reindexed rows are merged back over
+  // the full set — replacing state with it would drop every other list.
   const persistOrder = async (merged: Todo[]) => {
     const prev = todos
     const reindexed = merged.map((t, i) => ({ ...t, sortIndex: i }))
-    setTodos(reindexed)
+    const byId = new Map(reindexed.map(t => [t.id, t]))
+    setTodos(p => p.map(t => byId.get(t.id) ?? t))
     const changed = reindexed.filter(t => prev.find(p => p.id === t.id)?.sortIndex !== t.sortIndex)
     const results = await Promise.all(changed.map(t => db.setTodoSortIndex(t.id, t.sortIndex)))
     if (results.some(r => r?.error)) {
@@ -553,9 +644,11 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const allCompleted = todos.filter(t => t.done)
-
-  const visible = todos
+  // Only the open list is ever on screen; everything downstream (counts,
+  // filters, drag ordering, clear-completed) works from this.
+  const listTodos = todos.filter(t => (t.listId ?? null) === activeListId)
+  const allCompleted = listTodos.filter(t => t.done)
+  const visible = listTodos
     .slice()
     .sort((a, b) => {
       if (sort !== 'date') return a.sortIndex - b.sortIndex
@@ -651,21 +744,112 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
       style={{ borderRadius: 'var(--radius-container)', boxShadow: 'var(--shadow-low)', minWidth: 0, height: compact ? 'auto' : '100%', minHeight: 0, overflow: compact ? 'visible' : 'hidden' }}
     >
       <Stack gap={4} style={{ flex: '0 0 auto', padding: compact ? '16px 16px 0' : '24px 24px 0' }}>
-        <Stack direction="horizontal" gap={2} align="center" justify="between">
-          <Heading level={1}>Checklist</Heading>
-          {meId && !todosLoading && todos.length > 0 && (
-            <Badge
-              variant={allCompleted.length === todos.length ? 'success' : 'info'}
-              label={`${allCompleted.length}/${todos.length}`}
+        {/* The tabs name the open list, so there's no separate heading. They
+            wrap to a second line rather than scrolling, keeping every checklist
+            reachable at any panel width; the ⋯ menu holds the actions for
+            whichever list is open. */}
+        {meId && !todosLoading && (
+          <Stack direction="horizontal" gap={1.5} wrap="wrap" align="center">
+            {tabLists.map(l => {
+              const isActive = l.id === activeListId
+              const count = todos.filter(t => (t.listId ?? null) === l.id && !t.done).length
+              return (
+                <button
+                  key={l.id ?? 'unfiled'}
+                  type="button"
+                  onClick={() => setActiveListId(l.id)}
+                  title={l.name}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    maxWidth: '100%',
+                    // Sized to carry the weight the panel heading used to —
+                    // the active tab is the title now.
+                    padding: '6px 14px',
+                    borderRadius: 999,
+                    fontSize: 18,
+                    fontWeight: isActive ? 600 : 500,
+                    lineHeight: 1.35,
+                    color: isActive
+                      ? `color-mix(in srgb, ${l.color} 80%, var(--color-text-primary))`
+                      : 'var(--color-text-secondary, #52525b)',
+                    background: isActive
+                      ? `color-mix(in srgb, ${l.color} 14%, transparent)`
+                      : 'var(--color-background-2, #f4f4f5)',
+                    boxShadow: isActive ? `inset 0 0 0 1px ${l.color}` : 'none',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                      background: l.color,
+                      opacity: isActive ? 1 : 0.55,
+                    }}
+                  />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {l.name}
+                  </span>
+                  {count > 0 && (
+                    <span style={{ fontSize: 13, opacity: 0.6, fontVariantNumeric: 'tabular-nums' }}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+            <IconButton
+              label="New checklist"
+              size="md"
+              variant="ghost"
+              icon={<Plus size={16} />}
+              onClick={() => {
+                setListDraft('')
+                setListColorDraft(LIST_PALETTE[lists.length % LIST_PALETTE.length])
+                setListDialog({ mode: 'new' })
+              }}
             />
-          )}
-        </Stack>
+            {activeList && (
+              <DropdownMenu
+                button={{
+                  label: 'Checklist actions',
+                  icon: <EllipsisHorizontalCircleIcon width={18} height={18} />,
+                  isIconOnly: true,
+                  variant: 'ghost',
+                  size: 'md',
+                }}
+                hasChevron={false}
+                items={[
+                  {
+                    label: 'Rename & colour…',
+                    onClick: () => {
+                      setListDraft(activeList.name)
+                      setListColorDraft(activeList.color)
+                      setListDialog({ mode: 'rename', list: activeList })
+                    },
+                  },
+                  { label: 'Delete checklist…', onClick: () => setDeletingList(activeList) },
+                ]}
+              />
+            )}
+            {listTodos.length > 0 && (
+              <span style={{ marginLeft: 'auto' }}>
+                <Badge
+                  variant={allCompleted.length === listTodos.length ? 'success' : 'info'}
+                  label={`${allCompleted.length}/${listTodos.length}`}
+                />
+              </span>
+            )}
+          </Stack>
+        )}
         {!meId && (
           <Text color="secondary" size="xsm">Sign in to save your to-dos.</Text>
         )}
       </Stack>
 
-      {!todosLoading && todos.length > 0 && (
+      {!todosLoading && listTodos.length > 0 && (
         <Stack gap={3} style={{ flex: '0 0 auto', padding: compact ? '0 16px' : '0 24px' }}>
           <Divider />
           <Stack direction="horizontal" gap={2} wrap="wrap" align="center" justify="between">
@@ -695,7 +879,7 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
       <Stack gap={3} style={{ flex: '1 1 auto', minHeight: 0, overflowY: compact ? 'visible' : 'auto', padding: compact ? 16 : 24 }}>
       {todosLoading ? (
         <TodoListSkeleton />
-      ) : todos.length === 0 ? (
+      ) : listTodos.length === 0 ? (
         <Stack gap={3}>
           <EmptyState
             className="pure-empty-state"
@@ -786,6 +970,117 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
         </>
       )}
       </Stack>
+
+      {/* Name / rename a checklist. One dialog serves both — the mode decides
+          the wording and what Save does. */}
+      <AlertDialog
+        open={!!listDialog}
+        onOpenChange={(open: boolean) => !open && setListDialog(null)}
+      >
+        <AlertDialogContent>
+          <form
+            onSubmit={e => {
+              e.preventDefault()
+              const name = listDraft.trim()
+              if (!name || !listDialog) return
+              if (listDialog.mode === 'new') void createList(name, listColorDraft)
+              else void editList(listDialog.list, name, listColorDraft)
+              setListDialog(null)
+            }}
+          >
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {listDialog?.mode === 'rename' ? 'Rename checklist' : 'New checklist'}
+              </AlertDialogTitle>
+            </AlertDialogHeader>
+            <input
+              autoFocus
+              value={listDraft}
+              onChange={e => setListDraft(e.target.value)}
+              placeholder="Checklist name"
+              aria-label="Checklist name"
+              style={{
+                width: '100%',
+                margin: '12px 0',
+                padding: '8px 10px',
+                fontSize: 13,
+                color: 'var(--color-text-primary)',
+                background: 'var(--color-background-2, #f4f4f5)',
+                border: '1px solid var(--color-border, #e4e4e7)',
+                borderRadius: 'var(--radius-element, 8px)',
+                outline: 'none',
+              }}
+            />
+            <Stack direction="horizontal" gap={1.5} wrap="wrap" align="center" style={{ marginBottom: 12 }}>
+              {LIST_PALETTE.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Colour ${c}`}
+                  aria-pressed={listColorDraft === c}
+                  onClick={() => setListColorDraft(c)}
+                  style={{
+                    all: 'unset',
+                    cursor: 'pointer',
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    background: c,
+                    // The ring reads as "selected" without shifting layout.
+                    boxShadow: listColorDraft === c
+                      ? `0 0 0 2px var(--color-background, #fff), 0 0 0 4px ${c}`
+                      : 'none',
+                  }}
+                />
+              ))}
+            </Stack>
+            <AlertDialogFooter>
+              <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+              <AlertDialogAction type="submit" disabled={!listDraft.trim()}>
+                {listDialog?.mode === 'rename' ? 'Save' : 'Create'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </form>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Deleting cascades to the list's items in Postgres, so the count is
+          stated plainly — there's no undo for this one. */}
+      <AlertDialog
+        open={!!deletingList}
+        onOpenChange={(open: boolean) => !open && setDeletingList(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Delete "${deletingList?.name ?? ''}"?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {(() => {
+                const n = deletingList
+                  ? todos.filter(t => (t.listId ?? null) === deletingList.id).length
+                  : 0
+                return n
+                  ? `This permanently removes the checklist and its ${n} item${n === 1 ? '' : 's'}. This can't be undone.`
+                  : 'This permanently removes the checklist.'
+              })()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deletingList) void removeList(deletingList)
+                // Close on click: the delete is optimistic and awaits the
+                // network, so leaving it to removeList would hold the dialog
+                // open until the round-trip finished.
+                setDeletingList(null)
+              }}
+            >
+              Delete checklist
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Stack>
   )
 }

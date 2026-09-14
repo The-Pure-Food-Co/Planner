@@ -49,11 +49,4 @@ export const LANE_PRESETS: LanePreset[] = [
       { key: 'firstorder', name: 'First order & review', dayOffset: 17, durDays: 3, dependsOn: ['training'] },
     ],
   },
-  {
-    id: 'blank',
-    label: 'Blank workstream',
-    color: '#7A8899',
-    description: 'An empty lane with no tasks.',
-    tasks: [],
-  },
 ]
