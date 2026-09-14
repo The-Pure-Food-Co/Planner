@@ -64,7 +64,7 @@ import {
 import { FlagIcon as FlagOutlineIcon } from '@heroicons/react/24/outline'
 import { db } from '@/lib/supabase'
 import { todayD, fmtDueRelative, taskAssignedTo, taskStatusId, wsStatuses, dueBucketOf, pd, mondayOf } from '@/lib/utils'
-import type { Task, Todo, Workspace } from '@/lib/types'
+import type { Task, Todo, TodoList, Workspace } from '@/lib/types'
 
 interface Row { t: Task; w: Workspace }
 
@@ -92,6 +92,10 @@ const progressVariant = (pct: number): ProgressBarVariant =>
 // devices/sessions for the signed-in user.
 type TodoFilter = 'all' | 'important' | 'completed'
 type TodoSort = 'manual' | 'date'
+
+// Which checklist was last open. UI-only, so it lives in localStorage next to
+// the planner's other UI state rather than in the database.
+const TODO_LIST_KEY = 'purefoods-planner-todo-list'
 
 // Placeholder rows shown while the to-do fetch is in flight, sized to match
 // TodoRowBody's layout so real rows don't visibly jump in once loaded.
@@ -436,23 +440,47 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
   const [sort, setSort] = useState<TodoSort>('manual')
   const [newTaskText, setNewTaskText] = useState('')
   const [newTaskDate, setNewTaskDate] = useState<string | null>(null)
+  // Named checklists. Exactly one is open at a time — there's no combined
+  // view — and the panel reopens on whichever was last used.
+  const [lists, setLists] = useState<TodoList[]>([])
+  const [activeListId, setActiveListId] = useState<string | null>(null)
   const toast = usePlannerStore(s => s.toast)
   const today = todayD()
 
   useEffect(() => {
-    if (!meId) { setTodos([]); setTodosLoading(false); return }
+    if (!meId) { setTodos([]); setLists([]); setTodosLoading(false); return }
     setTodosLoading(true)
-    db.fetchMyTodos(meId).then(t => {
-      setTodos(t); setTodosLoading(false)
+    Promise.all([db.fetchMyTodos(meId), db.fetchMyTodoLists(meId)]).then(([t, l]) => {
+      setTodos(t)
+      setLists(l)
+      const remembered = typeof window !== 'undefined'
+        ? window.localStorage.getItem(TODO_LIST_KEY)
+        : null
+      // Fall back to the first list when the remembered one is gone (deleted,
+      // or belonging to another device). `null` means the pre-migration
+      // bucket, which only shows while it still holds items.
+      const valid = remembered && l.some(x => x.id === remembered)
+      setActiveListId(valid ? remembered : (l[0]?.id ?? null))
+      setTodosLoading(false)
     })
   }, [meId])
+
+  // Remember the open list across sessions, alongside the other UI-only state.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeListId) return
+    window.localStorage.setItem(TODO_LIST_KEY, activeListId)
+  }, [activeListId])
 
   // Creates a task from the dialog with its due date and flag.
   const createTodo = async (
     text: string, dueDate: string | null, important: boolean,
   ) => {
     if (!meId) return
-    const created = await db.addTodo(meId, text, todos.length, dueDate, important)
+    // New items land in the list that's open — there's no combined view to
+    // add from, so the current list is always the right home. sortIndex counts
+    // within that list, not across every list the user owns.
+    const nextIndex = todos.filter(t => (t.listId ?? null) === activeListId).length
+    const created = await db.addTodo(meId, text, nextIndex, dueDate, important, activeListId)
     if (created) setTodos(prev => [...prev, created])
     else toast('Save failed — could not add task')
   }
@@ -503,11 +531,60 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
     })
   }
 
+  const activeList = lists.find(l => l.id === activeListId)
+
+  const createList = async () => {
+    if (!meId) return
+    const name = window.prompt('Name this checklist')?.trim()
+    if (!name) return
+    const created = await db.addTodoList(meId, name, lists.length)
+    if (!created) { toast('Save failed — could not create checklist'); return }
+    setLists(prev => [...prev, created])
+    setActiveListId(created.id)
+  }
+
+  const renameList = async (list: TodoList) => {
+    const name = window.prompt('Rename checklist', list.name)?.trim()
+    if (!name || name === list.name) return
+    const prev = lists
+    setLists(p => p.map(l => (l.id === list.id ? { ...l, name } : l)))
+    const result = await db.renameTodoList(list.id, name)
+    if (result?.error) {
+      setLists(prev)
+      toast('Save failed — change reverted')
+    }
+  }
+
+  const removeList = async (list: TodoList) => {
+    const count = todos.filter(t => (t.listId ?? null) === list.id).length
+    // Deleting cascades to the list's items in Postgres, so say so plainly —
+    // this is not recoverable from the UI.
+    const msg = count
+      ? `Delete "${list.name}" and its ${count} item${count === 1 ? '' : 's'}? This can't be undone.`
+      : `Delete "${list.name}"?`
+    if (!window.confirm(msg)) return
+    const prevLists = lists
+    const prevTodos = todos
+    const remaining = lists.filter(l => l.id !== list.id)
+    setLists(remaining)
+    setTodos(p => p.filter(t => (t.listId ?? null) !== list.id))
+    setActiveListId(remaining[0]?.id ?? null)
+    const result = await db.deleteTodoList(list.id)
+    if (result?.error) {
+      setLists(prevLists)
+      setTodos(prevTodos)
+      setActiveListId(list.id)
+      toast('Delete failed — change reverted')
+    }
+  }
+
   const clearCompleted = async () => {
     if (!meId) return
     const prev = todos
-    setTodos(p => p.filter(t => !t.done))
-    const result = await db.clearCompletedTodos(meId)
+    // Only the open list is cleared, so local state must match the delete's
+    // scope — filtering every done item would blank other lists on screen.
+    setTodos(p => p.filter(t => !(t.done && (t.listId ?? null) === activeListId)))
+    const result = await db.clearCompletedTodos(meId, activeListId)
     if (result?.error) {
       setTodos(prev)
       toast('Delete failed — change reverted')
@@ -536,10 +613,13 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
 
   // Reindexes the full list after a drag so sort_index stays contiguous
   // across both active and completed items, then persists only what moved.
+  // `merged` is the open list only, so its reindexed rows are merged back over
+  // the full set — replacing state with it would drop every other list.
   const persistOrder = async (merged: Todo[]) => {
     const prev = todos
     const reindexed = merged.map((t, i) => ({ ...t, sortIndex: i }))
-    setTodos(reindexed)
+    const byId = new Map(reindexed.map(t => [t.id, t]))
+    setTodos(p => p.map(t => byId.get(t.id) ?? t))
     const changed = reindexed.filter(t => prev.find(p => p.id === t.id)?.sortIndex !== t.sortIndex)
     const results = await Promise.all(changed.map(t => db.setTodoSortIndex(t.id, t.sortIndex)))
     if (results.some(r => r?.error)) {
@@ -553,9 +633,11 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const allCompleted = todos.filter(t => t.done)
-
-  const visible = todos
+  // Only the open list is ever on screen; everything downstream (counts,
+  // filters, drag ordering, clear-completed) works from this.
+  const listTodos = todos.filter(t => (t.listId ?? null) === activeListId)
+  const allCompleted = listTodos.filter(t => t.done)
+  const visible = listTodos
     .slice()
     .sort((a, b) => {
       if (sort !== 'date') return a.sortIndex - b.sortIndex
@@ -652,11 +734,45 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
     >
       <Stack gap={4} style={{ flex: '0 0 auto', padding: compact ? '16px 16px 0' : '24px 24px 0' }}>
         <Stack direction="horizontal" gap={2} align="center" justify="between">
-          <Heading level={1}>Checklist</Heading>
-          {meId && !todosLoading && todos.length > 0 && (
+          {meId && lists.length > 0 ? (
+            <DropdownMenu
+              button={{
+                label: activeList?.name ?? 'Checklist',
+                variant: 'ghost',
+                size: 'sm',
+              }}
+              items={[
+                ...lists.map(l => ({
+                  label: `${l.name} (${todos.filter(t => (t.listId ?? null) === l.id).length})`,
+                  icon: l.id === activeListId ? ('check' as const) : undefined,
+                  onClick: () => setActiveListId(l.id),
+                })),
+                // Only surfaced while pre-migration items still exist, so it
+                // quietly disappears once they've been filed.
+                ...(todos.some(t => (t.listId ?? null) === null)
+                  ? [{
+                      label: `Unfiled (${todos.filter(t => (t.listId ?? null) === null).length})`,
+                      icon: activeListId === null ? ('check' as const) : undefined,
+                      onClick: () => setActiveListId(null),
+                    }]
+                  : []),
+                { type: 'divider' as const },
+                { label: 'New checklist…', onClick: () => void createList() },
+                ...(activeList
+                  ? [
+                      { label: 'Rename…', onClick: () => void renameList(activeList) },
+                      { label: 'Delete checklist…', onClick: () => void removeList(activeList) },
+                    ]
+                  : []),
+              ]}
+            />
+          ) : (
+            <Heading level={1}>Checklist</Heading>
+          )}
+          {meId && !todosLoading && listTodos.length > 0 && (
             <Badge
-              variant={allCompleted.length === todos.length ? 'success' : 'info'}
-              label={`${allCompleted.length}/${todos.length}`}
+              variant={allCompleted.length === listTodos.length ? 'success' : 'info'}
+              label={`${allCompleted.length}/${listTodos.length}`}
             />
           )}
         </Stack>
@@ -665,7 +781,7 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
         )}
       </Stack>
 
-      {!todosLoading && todos.length > 0 && (
+      {!todosLoading && listTodos.length > 0 && (
         <Stack gap={3} style={{ flex: '0 0 auto', padding: compact ? '0 16px' : '0 24px' }}>
           <Divider />
           <Stack direction="horizontal" gap={2} wrap="wrap" align="center" justify="between">
@@ -695,7 +811,7 @@ function PersonalTodo({ meId, compact = false }: { meId: string | null; compact?
       <Stack gap={3} style={{ flex: '1 1 auto', minHeight: 0, overflowY: compact ? 'visible' : 'auto', padding: compact ? 16 : 24 }}>
       {todosLoading ? (
         <TodoListSkeleton />
-      ) : todos.length === 0 ? (
+      ) : listTodos.length === 0 ? (
         <Stack gap={3}>
           <EmptyState
             className="pure-empty-state"

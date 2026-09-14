@@ -1,5 +1,5 @@
 import { getSupabaseBrowserClient } from './supabase/browser-singleton'
-import type { PlannerData, Workspace, Lane, Task, KpiGroup, LaneTemplate, Member, WorkspaceMembership, Role, SavedView, UiState, ActivityLogEntry, AppNotification, NotificationType, NotificationPrefs, Todo } from './types'
+import type { PlannerData, Workspace, Lane, Task, KpiGroup, LaneTemplate, Member, WorkspaceMembership, Role, SavedView, UiState, ActivityLogEntry, AppNotification, NotificationType, NotificationPrefs, Todo, TodoList } from './types'
 
 // A single shared client, created via @supabase/ssr's createBrowserClient (see
 // ./supabase/client.ts) so this app's data layer and its proxy.ts/auth-callback
@@ -133,10 +133,15 @@ export function rowToActivity(r: Record<string, any>): ActivityLogEntry {
 
 export function rowToTodo(r: Record<string, any>): Todo {
   return {
-    id: r.id, text: r.text, done: r.done ?? false, sortIndex: r.sort_index ?? 0,
+    id: r.id, listId: r.list_id ?? null,
+    text: r.text, done: r.done ?? false, sortIndex: r.sort_index ?? 0,
     dueDate: r.due_date ?? null, important: r.important ?? false,
     completedAt: r.completed_at ?? null,
   }
+}
+
+export function rowToTodoList(r: Record<string, any>): TodoList {
+  return { id: r.id, name: r.name, sortIndex: r.sort_index ?? 0 }
 }
 
 export function rowToNotification(r: Record<string, any>): AppNotification {
@@ -477,15 +482,49 @@ export const db = {
     sortIndex: number,
     dueDate: string | null = null,
     important = false,
+    listId: string | null = null,
   ): Promise<Todo | null> => {
     if (!supabase) return null
     const { data, error } = await supabase
       .from('todos')
-      .insert({ owner_id: ownerId, text, sort_index: sortIndex, due_date: dueDate, important })
+      .insert({ owner_id: ownerId, text, sort_index: sortIndex, due_date: dueDate, important, list_id: listId })
       .select()
       .single()
     return error || !data ? null : rowToTodo(data)
   },
+
+  // ── Todo lists ─────────────────────────────────────────────────────────────
+
+  fetchMyTodoLists: async (ownerId: string): Promise<TodoList[]> => {
+    if (!supabase) return []
+    const { data, error } = await supabase
+      .from('todo_lists')
+      .select('*')
+      .eq('owner_id', ownerId)
+      .order('sort_index')
+    if (error || !data) return []
+    return data.map(rowToTodoList)
+  },
+
+  addTodoList: async (ownerId: string, name: string, sortIndex: number): Promise<TodoList | null> => {
+    if (!supabase) return null
+    const { data, error } = await supabase
+      .from('todo_lists')
+      .insert({ owner_id: ownerId, name, sort_index: sortIndex })
+      .select()
+      .single()
+    return error || !data ? null : rowToTodoList(data)
+  },
+
+  renameTodoList: (id: string, name: string) =>
+    supabase?.from('todo_lists').update({ name }).eq('id', id),
+
+  // todos.list_id is ON DELETE CASCADE, so the list's items go with it.
+  deleteTodoList: (id: string) =>
+    supabase?.from('todo_lists').delete().eq('id', id),
+
+  setTodoListId: (id: string, listId: string | null) =>
+    supabase?.from('todos').update({ list_id: listId }).eq('id', id),
 
   setTodoDone: (id: string, done: boolean, completedAt: string | null) =>
     supabase?.from('todos').update({ done, completed_at: completedAt }).eq('id', id),
@@ -509,12 +548,17 @@ export const db = {
   // "Undo" toast after a delete — upsert so a double-click can't error out.
   restoreTodo: (ownerId: string, t: Todo) =>
     supabase?.from('todos').upsert({
-      id: t.id, owner_id: ownerId, text: t.text, done: t.done, sort_index: t.sortIndex,
-      due_date: t.dueDate, important: t.important, completed_at: t.completedAt,
+      id: t.id, owner_id: ownerId, list_id: t.listId, text: t.text, done: t.done,
+      sort_index: t.sortIndex, due_date: t.dueDate, important: t.important,
+      completed_at: t.completedAt,
     }),
 
-  clearCompletedTodos: (ownerId: string) =>
-    supabase?.from('todos').delete().eq('owner_id', ownerId).eq('done', true),
+  // Scoped to one list: the panel only ever shows a single list, so clearing
+  // completed items must not reach into lists the user can't currently see.
+  clearCompletedTodos: (ownerId: string, listId: string | null) => {
+    const q = supabase?.from('todos').delete().eq('owner_id', ownerId).eq('done', true)
+    return listId === null ? q?.is('list_id', null) : q?.eq('list_id', listId)
+  },
 
   upsertView: (v: SavedView) =>
     supabase?.from('views').upsert({

@@ -63,10 +63,20 @@ export interface AppNotification {
   createdAt: string
 }
 
+// A named personal checklist on the "My work" page. A user switches between
+// their lists one at a time; every todo belongs to exactly one. Private to the
+// owner, like the todos themselves.
+export interface TodoList {
+  id: string
+  name: string
+  sortIndex: number
+}
+
 // Personal scratch to-do on the "My work" page — one row per item, owned by a
 // single profile, not shared with or visible to anyone else.
 export interface Todo {
   id: string
+  listId: string | null        // null only for rows predating the lists migration
   text: string
   done: boolean
   sortIndex: number

@@ -150,9 +150,21 @@ create table if not exists notifications (
   created_at   timestamptz not null default now()
 );
 
+-- Named personal checklists ("My work" Checklist panel). A user switches
+-- between lists; each todo belongs to exactly one.
+create table if not exists todo_lists (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid        not null references profiles(id) on delete cascade,
+  name        text        not null,
+  sort_index  int         not null default 0,
+  created_at  timestamptz not null default now()
+);
+
 create table if not exists todos (
   id            uuid primary key default gen_random_uuid(),
   owner_id      uuid        not null references profiles(id) on delete cascade,
+  -- Deleting a list takes its items with it (see migrations/001_todo_lists.sql).
+  list_id       uuid        references todo_lists(id) on delete cascade,
   text          text        not null,
   done          boolean     not null default false,
   sort_index    int         not null default 0,
@@ -161,6 +173,9 @@ create table if not exists todos (
   completed_at  timestamptz,
   created_at    timestamptz not null default now()
 );
+
+create index if not exists todo_lists_owner_idx on todo_lists(owner_id);
+create index if not exists todos_list_idx on todos(list_id);
 
 create table if not exists lane_templates (
   id          text primary key,
@@ -330,6 +345,7 @@ alter table workspace_members  enable row level security;
 alter table views              enable row level security;
 alter table activity_log       enable row level security;
 alter table notifications      enable row level security;
+alter table todo_lists         enable row level security;
 alter table todos              enable row level security;
 alter table lane_templates     enable row level security;
 
@@ -393,6 +409,23 @@ create policy notifications_update on notifications for update to authenticated 
 );
 create policy notifications_delete on notifications for delete to authenticated using (
   recipient_id in (select id from profiles where auth_id = auth.uid())
+);
+
+-- todo_lists: owner-only, same shape as todos — a user's lists are as private
+-- as the items inside them.
+create policy todo_lists_select on todo_lists for select to authenticated using (
+  owner_id in (select id from profiles where auth_id = auth.uid())
+);
+create policy todo_lists_insert on todo_lists for insert to authenticated with check (
+  owner_id in (select id from profiles where auth_id = auth.uid())
+);
+create policy todo_lists_update on todo_lists for update to authenticated using (
+  owner_id in (select id from profiles where auth_id = auth.uid())
+) with check (
+  owner_id in (select id from profiles where auth_id = auth.uid())
+);
+create policy todo_lists_delete on todo_lists for delete to authenticated using (
+  owner_id in (select id from profiles where auth_id = auth.uid())
 );
 
 -- todos: owner-only ("My work" personal checklist).
