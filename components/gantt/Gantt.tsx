@@ -584,6 +584,7 @@ export default function Gantt({
     reorderTasks,
     reorderLanes,
     addLane,
+    addTask,
     duplicateLane,
     addLaneFromPreset,
     addLaneFromTemplate,
@@ -1664,13 +1665,21 @@ export default function Gantt({
                 />
                 <DropdownMenuContent align="start" className="w-64">
                   <DropdownMenuItem
-                    onClick={() =>
-                      addLane(ws.id, {
+                    onClick={() => {
+                      const lane: Lane = {
                         id: uuid(),
                         label: 'New workstream',
                         color: ws.color ?? '#C63663',
-                      })
-                    }
+                      };
+                      addLane(ws.id, lane);
+                      // Seed a default task so the new workstream is visible
+                      // straight away — a lane with no tasks is filtered out of
+                      // the chart entirely under any active filter (see the
+                      // `anyFilter && !tasks.length` skip below), so a blank one
+                      // would appear to vanish the moment it's created. Matches
+                      // the preset/template paths, which also arrive with tasks.
+                      addTask(ws.id, lane.id);
+                    }}
                   >
                     <PlusIcon className="w-4 h-4" />
                     Blank workstream
