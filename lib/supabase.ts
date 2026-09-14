@@ -231,8 +231,20 @@ export const db = {
   upsertLane: (wsId: string, l: Lane, i: number) =>
     supabase?.from('lanes').upsert(laneToDb(wsId, l, i)),
 
-  deleteLane: (id: string) =>
-    supabase?.from('lanes').delete().eq('id', id),
+  // tasks.lane_id has no FK to lanes (it's a plain text column), so nothing
+  // cascades: deleting only the lane would strand its tasks in the table,
+  // invisible in the UI but reloaded on the next loadAll() with a lane_id
+  // pointing at a lane that no longer exists. Delete the tasks first so a
+  // failure leaves the lane — and therefore its tasks — still reachable.
+  deleteLane: (id: string) => {
+    if (!supabase) return undefined
+    const client = supabase
+    return (async (): Promise<{ error: any }> => {
+      const { error } = await client.from('tasks').delete().eq('lane_id', id)
+      if (error) return { error }
+      return await client.from('lanes').delete().eq('id', id)
+    })()
+  },
 
   upsertTask: (wsId: string, t: Task) =>
     supabase?.from('tasks').upsert(taskToDb(wsId, t)),

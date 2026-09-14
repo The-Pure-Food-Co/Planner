@@ -691,10 +691,23 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   },
 
   updateWorkspace: ws => {
+    const prev = get().data.workspaces.find(w => w.id === ws.id)
     const i = get().data.workspaces.findIndex(w => w.id === ws.id)
+    // The Workstreams modal saves the whole workspace, so a lane removed there
+    // arrives simply as an absence. Upserting the workspace row alone would
+    // leave that lane and its tasks in the database — invisible here but
+    // reloaded on the next loadAll() — so delete what this save dropped.
+    const keptLanes = new Set(ws.lanes.map(l => l.id))
+    const goneLanes = (prev?.lanes ?? []).filter(l => !keptLanes.has(l.id)).map(l => l.id)
+    const keptTasks = new Set(ws.tasks.map(t => t.id))
+    const goneTasks = (prev?.tasks ?? []).filter(t => !keptTasks.has(t.id)).map(t => t.id)
     get().optimistic(
       () => set(s => ({ data: { ...s.data, workspaces: s.data.workspaces.map(w => w.id === ws.id ? ws : w) } })),
-      () => db.upsertWorkspace(ws, i >= 0 ? i : 0),
+      () => [
+        db.upsertWorkspace(ws, i >= 0 ? i : 0),
+        ...goneTasks.map(id => db.deleteTask(id)),
+        ...goneLanes.map(id => db.deleteLane(id)),
+      ],
     )
   },
 
