@@ -579,6 +579,7 @@ export default function Gantt({
     updateTask,
     moveTaskWithDependents,
     duplicateTask,
+    copyTasksToLane,
     deleteTask,
     applyRecurrence,
     reorderTasks,
@@ -617,9 +618,26 @@ export default function Gantt({
   } | null>(null);
   const [hdrDragging, setHdrDragging] = useState(false);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
-  // Task selected in the sidebar (single-select). Enables the Ctrl/Cmd+D
-  // duplicate shortcut and shows a selection highlight on the row.
+  // Task selected in the sidebar. `selectedTaskId` is the anchor — the last
+  // row clicked — and drives the Ctrl/Cmd+D shortcut and shift-click ranges.
+  // `selectedTaskIds` is the full selection: always contains the anchor, and
+  // grows via Ctrl/Cmd-click (toggle) or Shift-click (range). Row actions that
+  // can act on many tasks (duplicate, copy to workstream) use the set.
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  // A row menu opened on a row inside the selection acts on the whole
+  // selection; opened on a row outside it, it acts on that row alone.
+  const menuTargetIds = useCallback(
+    (taskId: string) =>
+      selectedTaskIds.size > 1 && selectedTaskIds.has(taskId)
+        ? Array.from(selectedTaskIds)
+        : [taskId],
+    [selectedTaskIds]
+  );
+  const clearSelection = useCallback(() => {
+    setSelectedTaskIds(new Set());
+    setSelectedTaskId(null);
+  }, []);
   // Task whose name is being edited inline in the sidebar row — set right
   // after a Gantt-originated "add task" so the user can just type the name.
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -795,6 +813,10 @@ export default function Gantt({
   // field so it never hijacks the browser's bookmark shortcut inside inputs.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedTaskIds.size) {
+        clearSelection();
+        return;
+      }
       if (!((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D'))) return;
       if (!canEdit || !selectedTaskId) return;
       const el = document.activeElement as HTMLElement | null;
@@ -802,12 +824,21 @@ export default function Gantt({
         return;
       if (!ws.tasks.some((t) => t.id === selectedTaskId)) return;
       e.preventDefault();
+      const ids = menuTargetIds(selectedTaskId);
+      if (ids.length > 1) {
+        ids.forEach((id) => duplicateTask(ws.id, id));
+        clearSelection();
+        return;
+      }
       const newId = duplicateTask(ws.id, selectedTaskId);
-      if (newId) setSelectedTaskId(newId);
+      if (newId) {
+        setSelectedTaskId(newId);
+        setSelectedTaskIds(new Set([newId]));
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canEdit, selectedTaskId, ws.id, ws.tasks, duplicateTask]);
+  }, [canEdit, selectedTaskId, selectedTaskIds, ws.id, ws.tasks, duplicateTask, menuTargetIds, clearSelection]);
 
   // expose scroll-to-today globally for toolbar button
   useEffect(() => {
@@ -991,6 +1022,10 @@ export default function Gantt({
   const taskLayout = new Map<string, { x: number; w: number; row: number }>();
   let rowOrd = 0;
   let visibleTaskCount = 0;
+  // Task ids in the order their rows render, so Shift-click can select the
+  // range between two rows as seen on screen (filters and collapsed lanes
+  // included) rather than in raw store order.
+  const visibleTaskIds: string[] = [];
   const personF = ui.person;
   const streamF = ui.stream;
   const searchF = ui.search ?? '';
@@ -1058,7 +1093,12 @@ export default function Gantt({
         style={{
           background: `linear-gradient(${tint},${tint}),#fff`,
         }}
-        onClick={() => toggleLane(lane.id)}
+        onClick={() => {
+          // Collapsing a lane can hide selected rows; drop the selection so a
+          // later menu action can't act on tasks that are no longer visible.
+          clearSelection();
+          toggleLane(lane.id);
+        }}
         onDragOver={laneOnDragOver}
         onDragLeave={laneOnDragLeave}
         onDrop={laneOnDrop}
@@ -1190,6 +1230,7 @@ export default function Gantt({
         const taskDropCls =
           dragIndicator?.id === taskRowId ? ` drop-${dragIndicator.pos}` : '';
         const isHovered = hoveredRowId === taskRowId;
+        visibleTaskIds.push(t.id);
 
         const taskOnDragOver = (ev: React.DragEvent) => {
           if (!ev.dataTransfer.types.includes(`app/task-${lane.id}`)) return;
@@ -1220,7 +1261,35 @@ export default function Gantt({
           reorderTasks(ws.id, lane.id, ordered);
         };
 
-        const isSelected = selectedTaskId === t.id;
+        const isSelected = selectedTaskIds.has(t.id) || selectedTaskId === t.id;
+        // Plain click selects just this row; Ctrl/⌘ toggles it in or out of the
+        // selection; Shift selects everything between the anchor and this row.
+        const onRowSelect = (ev: React.MouseEvent) => {
+          if (ev.shiftKey && selectedTaskId) {
+            const from = visibleTaskIds.indexOf(selectedTaskId);
+            const to = visibleTaskIds.indexOf(t.id);
+            if (from >= 0 && to >= 0) {
+              const [lo, hi] = from < to ? [from, to] : [to, from];
+              setSelectedTaskIds(new Set(visibleTaskIds.slice(lo, hi + 1)));
+              return;
+            }
+          }
+          if (ev.ctrlKey || ev.metaKey) {
+            setSelectedTaskIds((prev) => {
+              const next = new Set(prev);
+              // The anchor is implicitly selected even before any ctrl-click,
+              // so fold it in before toggling or it drops out of the set.
+              if (selectedTaskId) next.add(selectedTaskId);
+              if (next.has(t.id)) next.delete(t.id);
+              else next.add(t.id);
+              return next;
+            });
+            setSelectedTaskId(t.id);
+            return;
+          }
+          setSelectedTaskIds(new Set([t.id]));
+          setSelectedTaskId(t.id);
+        };
         sidebarRows.push(
           <div
             key={taskRowId}
@@ -1231,8 +1300,8 @@ export default function Gantt({
             onDrop={taskOnDrop}
             onMouseEnter={() => setHoveredRowId(taskRowId)}
             onMouseLeave={() => setHoveredRowId(null)}
-            onClick={() => setSelectedTaskId(t.id)}
-            title={canEdit ? 'Click to select · Ctrl/⌘+D to duplicate' : undefined}
+            onClick={onRowSelect}
+            title={canEdit ? 'Click to select · Ctrl/⌘-click or Shift-click for several · Ctrl/⌘+D to duplicate' : undefined}
           >
             <span
               className="grip6"
@@ -1394,7 +1463,11 @@ export default function Gantt({
                       aria-label="Task actions"
                       onClick={(ev) => {
                         ev.stopPropagation();
+                        // Opening the menu on a row already in the selection
+                        // keeps it, so the menu can act on all of them.
+                        if (selectedTaskIds.has(t.id)) return;
                         setSelectedTaskId(t.id);
+                        setSelectedTaskIds(new Set([t.id]));
                       }}
                     >
                       <MoreHorizontal className="w-4 h-4" strokeWidth={1.75} />
@@ -1412,16 +1485,58 @@ export default function Gantt({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {
-                      const newId = duplicateTask(ws.id, t.id);
-                      if (newId) setSelectedTaskId(newId);
+                      // Acting on a row inside the selection acts on the whole
+                      // selection; on a row outside it, just that row.
+                      const ids = menuTargetIds(t.id);
+                      if (ids.length > 1) {
+                        ids.forEach((id) => duplicateTask(ws.id, id));
+                        clearSelection();
+                      } else {
+                        const newId = duplicateTask(ws.id, t.id);
+                        if (newId) {
+                          setSelectedTaskId(newId);
+                          setSelectedTaskIds(new Set([newId]));
+                        }
+                      }
                     }}
                   >
                     <Copy className="w-4 h-4" />
-                    Duplicate
+                    {menuTargetIds(t.id).length > 1
+                      ? `Duplicate ${menuTargetIds(t.id).length} tasks`
+                      : 'Duplicate'}
                     <span className="ml-auto text-[10px] text-muted-foreground">
                       Ctrl/⌘D
                     </span>
                   </DropdownMenuItem>
+                  {ws.lanes.length > 1 && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Copy className="w-4 h-4" />
+                        {menuTargetIds(t.id).length > 1
+                          ? `Copy ${menuTargetIds(t.id).length} tasks to…`
+                          : 'Copy to workstream'}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
+                        {ws.lanes
+                          .filter((l) => l.id !== lane.id)
+                          .map((l) => (
+                            <DropdownMenuItem
+                              key={l.id}
+                              onClick={() => {
+                                copyTasksToLane(ws.id, menuTargetIds(t.id), l.id);
+                                clearSelection();
+                              }}
+                            >
+                              <span
+                                className="inline-block w-2 h-2 rounded-full"
+                                style={{ background: l.color }}
+                              />
+                              {l.label}
+                            </DropdownMenuItem>
+                          ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  )}
                   <DropdownMenuItem
                     onClick={() =>
                       startInlineAdd(lane.id, t.noDate ? undefined : t.start)

@@ -412,3 +412,34 @@ export const RECUR_OPTIONS: { freq: 'weekly' | 'fortnightly' | 'monthly'; label:
   { freq: 'fortnightly', label: 'Fortnightly' },
   { freq: 'monthly', label: 'Monthly' },
 ];
+
+// Builds the copies for "Copy to workstream": clones each source task into
+// `targetLaneId` with a fresh id, remapping dependencies that point within the
+// copied set and dropping those that point outside it (they'd otherwise still
+// reference tasks in the source lane). Pure so the id-remapping stays testable;
+// the store action owns persistence. `newId`/`reporterId` are injected rather
+// than generated here so tests can pin them.
+export const buildLaneCopies = (
+  srcTasks: Task[],
+  targetLaneId: string,
+  existingInTarget: number,
+  newId: () => string,
+  reporterId?: string,
+): Task[] => {
+  const ordered = [...srcTasks].sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+  const idMap = new Map(ordered.map((t) => [t.id, newId()]));
+  return ordered.map((t, i) => ({
+    ...(JSON.parse(JSON.stringify(t)) as Task),
+    id: idMap.get(t.id)!,
+    lane: targetLaneId,
+    sortIndex: existingInTarget + i,
+    comments: [],
+    reporterId,
+    boardBucket: null,
+    dependencies: (t.dependencies ?? [])
+      .map((d) => idMap.get(d))
+      .filter(Boolean) as string[],
+    recurrence: undefined,
+    recurrenceParentId: undefined,
+  }));
+};

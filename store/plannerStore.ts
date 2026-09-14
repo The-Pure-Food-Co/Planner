@@ -4,7 +4,7 @@ import { toast as sonnerToast } from 'sonner'
 import type { PlannerData, UiState, Task, Lane, Workspace, KpiGroup, LaneTemplate, TemplateTask, PrimaryTab, Role, SavedView, Member, ActivityLogEntry, ActivityAction, AppNotification, NotificationPrefs, RecurrenceRule } from '@/lib/types'
 import { SEED } from '@/lib/seed'
 import { LANE_PRESETS } from '@/lib/lanePresets'
-import { uuid, fd, todayD, addDays, pd, fmtShort, wsStatuses, taskStatusId, cascadeTaskMove, recurrenceOccurrences, downscaleImage, diffChecklistMsgs, diffMilestoneMsgs, diffAttachmentMsgs, diffLinkMsgs } from '@/lib/utils'
+import { uuid, fd, todayD, addDays, pd, fmtShort, wsStatuses, taskStatusId, cascadeTaskMove, recurrenceOccurrences, downscaleImage, diffChecklistMsgs, diffMilestoneMsgs, diffAttachmentMsgs, diffLinkMsgs, buildLaneCopies } from '@/lib/utils'
 import { buildTaskNotifications } from '@/lib/notify'
 import { supabase, loadAll, subscribeToChanges, subscribeToNotifications, subscribeToPresence, db, fireAndForget, fetchMsPhoto, rowToWorkspaceMeta, rowToLane, rowToTask, rowToKpiGroup, rowToLaneTemplate, rowToMember, rowToMembership, rowToView } from '@/lib/supabase'
 
@@ -212,6 +212,10 @@ interface PlannerStore {
   // Clone a task (fresh id, "(copy)" suffix) directly below the original in the
   // same lane; returns the new task's id. Dependencies are copied as-is.
   duplicateTask: (wsId: string, taskId: string) => string | undefined
+  // Copies tasks into another workstream, keeping dependencies that point
+  // within the copied set (remapped to the new ids) and dropping those that
+  // point outside it. Returns the new task ids.
+  copyTasksToLane: (wsId: string, taskIds: string[], targetLaneId: string) => string[]
   // Set (or clear) a task's recurrence and (re)generate its occurrences. Passing
   // rule=null clears recurrence and deletes any generated occurrences. When the
   // caller has already persisted the template row (updateTask), pass
@@ -978,6 +982,70 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       },
     })
     return copy.id
+  },
+
+  copyTasksToLane: (wsId, taskIds, targetLaneId) => {
+    const prev = get().data
+    const ws = prev.workspaces.find(w => w.id === wsId)
+    const lane = ws?.lanes.find(l => l.id === targetLaneId)
+    if (!ws || !lane) return []
+    // Copy in the order they appear in their source lanes so a multi-lane
+    // selection lands in a predictable order rather than click order.
+    const srcTasks = taskIds
+      .map(id => ws.tasks.find(t => t.id === id))
+      .filter((t): t is Task => !!t)
+      .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0))
+    if (!srcTasks.length) return []
+
+    // Names keep their originals — the "(copy)" suffix exists to tell same-lane
+    // siblings apart, and these land in a different workstream.
+    const copies = buildLaneCopies(
+      srcTasks,
+      targetLaneId,
+      ws.tasks.filter(t => t.lane === targetLaneId).length,
+      uuid,
+      get().meId ?? undefined,
+    )
+
+    get().optimistic(
+      () => set(s => ({
+        data: {
+          ...s.data,
+          workspaces: s.data.workspaces.map(w =>
+            w.id === wsId ? { ...w, tasks: [...w.tasks, ...copies] } : w
+          ),
+        },
+      })),
+      () => copies.map(t => db.upsertTask(wsId, t)),
+      {
+        onSuccess: () => {
+          const actorId = get().meId ?? ''
+          const actorName = memberName(prev.members, actorId)
+          copies.forEach(c =>
+            db.logActivity(buildTaskActivityEntries(ws, prev.members, undefined, c, actorId, actorName, 'created'))
+          )
+        },
+      },
+    )
+    const n = copies.length
+    get().toast(`Copied ${n} task${n > 1 ? 's' : ''} to ${lane.label}`, {
+      action: 'Undo',
+      onAction: () => {
+        const ids = new Set(copies.map(c => c.id))
+        set(s => ({
+          data: {
+            ...s.data,
+            workspaces: s.data.workspaces.map(w =>
+              w.id === wsId ? { ...w, tasks: w.tasks.filter(t => !ids.has(t.id)) } : w
+            ),
+          },
+        }))
+        get().commit()
+        copies.forEach(c => fireAndForget(db.deleteTask(c.id), 'undo copy to workstream'))
+        get().toast('Copies removed')
+      },
+    })
+    return copies.map(c => c.id)
   },
 
   applyRecurrence: (wsId, taskId, rule, opts) => {
