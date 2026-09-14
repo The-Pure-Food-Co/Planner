@@ -628,11 +628,18 @@ export default function Gantt({
   // A row menu opened on a row inside the selection acts on the whole
   // selection; opened on a row outside it, it acts on that row alone.
   const menuTargetIds = useCallback(
-    (taskId: string) =>
-      selectedTaskIds.size > 1 && selectedTaskIds.has(taskId)
-        ? Array.from(selectedTaskIds)
-        : [taskId],
-    [selectedTaskIds]
+    (taskId: string) => {
+      if (selectedTaskIds.size <= 1 || !selectedTaskIds.has(taskId)) return [taskId];
+      // Belt and braces: selection is built per-lane, but a concurrent delete or
+      // a realtime move from another user could strand an id from another lane,
+      // and these actions ("move/copy N to…") assume one source lane.
+      const laneId = ws.tasks.find((x) => x.id === taskId)?.lane;
+      const ids = Array.from(selectedTaskIds).filter(
+        (id) => ws.tasks.find((x) => x.id === id)?.lane === laneId
+      );
+      return ids.length ? ids : [taskId];
+    },
+    [selectedTaskIds, ws.tasks]
   );
   const clearSelection = useCallback(() => {
     setSelectedTaskIds(new Set());
@@ -1265,25 +1272,44 @@ export default function Gantt({
         // Plain click selects just this row; Ctrl/⌘ toggles it in or out of the
         // selection; Shift selects everything between the anchor and this row.
         const onRowSelect = (ev: React.MouseEvent) => {
-          if (ev.shiftKey && selectedTaskId) {
+          // A selection is always within one workstream: the actions it feeds
+          // ("copy/move N tasks to…") target a single lane, and a cross-lane
+          // selection has no sensible source to move out of. Extending into a
+          // different lane starts a fresh selection there instead.
+          const sameLane = (id: string) =>
+            ws.tasks.find((x) => x.id === id)?.lane === lane.id;
+
+          if (ev.shiftKey && selectedTaskId && sameLane(selectedTaskId)) {
             const from = visibleTaskIds.indexOf(selectedTaskId);
             const to = visibleTaskIds.indexOf(t.id);
             if (from >= 0 && to >= 0) {
               const [lo, hi] = from < to ? [from, to] : [to, from];
-              setSelectedTaskIds(new Set(visibleTaskIds.slice(lo, hi + 1)));
+              // Rows between the two can belong to other lanes when lanes are
+              // interleaved on screen; keep only this lane's.
+              setSelectedTaskIds(
+                new Set(visibleTaskIds.slice(lo, hi + 1).filter(sameLane))
+              );
+              setSelectedTaskId(t.id);
               return;
             }
           }
           if (ev.ctrlKey || ev.metaKey) {
-            setSelectedTaskIds((prev) => {
-              const next = new Set(prev);
-              // The anchor is implicitly selected even before any ctrl-click,
-              // so fold it in before toggling or it drops out of the set.
-              if (selectedTaskId) next.add(selectedTaskId);
-              if (next.has(t.id)) next.delete(t.id);
-              else next.add(t.id);
-              return next;
-            });
+            // The anchor is implicitly selected before any ctrl-click, so fold
+            // it in first — otherwise it silently drops out of the set.
+            const base = new Set(selectedTaskIds);
+            if (selectedTaskId && sameLane(selectedTaskId)) base.add(selectedTaskId);
+            const next = new Set(Array.from(base).filter(sameLane));
+            if (next.has(t.id)) {
+              next.delete(t.id);
+              setSelectedTaskIds(next);
+              // Hand the anchor to a survivor; keeping the just-deselected row
+              // as anchor would re-select it, since the anchor always shows as
+              // selected.
+              setSelectedTaskId(next.values().next().value ?? null);
+              return;
+            }
+            next.add(t.id);
+            setSelectedTaskIds(next);
             setSelectedTaskId(t.id);
             return;
           }
@@ -1574,7 +1600,9 @@ export default function Gantt({
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
                         <ArrowRightLeft className="w-4 h-4" />
-                        Move to workstream
+                        {menuTargetIds(t.id).length > 1
+                          ? `Move ${menuTargetIds(t.id).length} tasks to…`
+                          : 'Move to workstream'}
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="max-h-64 overflow-y-auto">
                         {ws.lanes
@@ -1582,13 +1610,25 @@ export default function Gantt({
                           .map((l) => (
                             <DropdownMenuItem
                               key={l.id}
-                              onClick={() =>
-                                updateTask(
-                                  ws.id,
-                                  { ...t, lane: l.id },
-                                  `Moved "${t.name}" to ${l.label}`
-                                )
-                              }
+                              onClick={() => {
+                                const ids = menuTargetIds(t.id);
+                                const moving = ws.tasks.filter((x) => ids.includes(x.id));
+                                // updateTask raises its own undo toast, so only
+                                // the first move announces the batch — otherwise
+                                // N moves stack N toasts, each undoing one task.
+                                moving.forEach((x, i) =>
+                                  updateTask(
+                                    ws.id,
+                                    { ...x, lane: l.id },
+                                    i > 0
+                                      ? undefined
+                                      : moving.length > 1
+                                        ? `Moved ${moving.length} tasks to ${l.label}`
+                                        : `Moved "${x.name}" to ${l.label}`
+                                  )
+                                );
+                                clearSelection();
+                              }}
                             >
                               <span
                                 className="inline-block w-2 h-2 rounded-full"
