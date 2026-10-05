@@ -4,7 +4,7 @@ import { toast as sonnerToast } from 'sonner'
 import type { PlannerData, UiState, Task, Lane, Workspace, KpiGroup, LaneTemplate, TemplateTask, PrimaryTab, Role, SavedView, Member, ActivityLogEntry, ActivityAction, AppNotification, NotificationPrefs, RecurrenceRule } from '@/lib/types'
 import { SEED } from '@/lib/seed'
 import { LANE_PRESETS } from '@/lib/lanePresets'
-import { uuid, fd, todayD, addDays, pd, fmtShort, wsStatuses, taskStatusId, cascadeTaskMove, recurrenceOccurrences, downscaleImage, diffChecklistMsgs, diffMilestoneMsgs, diffAttachmentMsgs, diffLinkMsgs, buildLaneCopies } from '@/lib/utils'
+import { uuid, fd, todayD, addDays, pd, fmtShort, wsStatuses, taskStatusId, cascadeTaskMove, recurrenceOccurrences, recurrenceSeriesKey, downscaleImage, diffChecklistMsgs, diffMilestoneMsgs, diffAttachmentMsgs, diffLinkMsgs, buildLaneCopies } from '@/lib/utils'
 import { buildTaskNotifications } from '@/lib/notify'
 import { supabase, loadAll, subscribeToChanges, subscribeToNotifications, subscribeToPresence, db, fireAndForget, fetchMsPhoto, rowToWorkspaceMeta, rowToLane, rowToTask, rowToKpiGroup, rowToLaneTemplate, rowToMember, rowToMembership, rowToView } from '@/lib/supabase'
 
@@ -673,7 +673,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     const start = fd(todayD())
     const task: Task = {
       id: uuid(), name: 'New task', lane: lane.id, owner: '', start,
-      end: fd(addDays(pd(start), 7)), pct: 0, notes: '',
+      end: fd(addDays(pd(start), 6)), pct: 0, notes: '',
       sortIndex: 0, boardBucket: null, checklist: [], milestones: [],
     }
     const wsWithDefaults: Workspace = { ...w, lanes: [lane], tasks: [task] }
@@ -915,7 +915,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
     const t: Task = {
       id: uuid(), name: 'New task', lane: laneId, owner, assignees,
       reporterId: meId ?? undefined, watchers: [], start,
-      end: fd(addDays(pd(start), 7)), pct, notes: '',
+      end: fd(addDays(pd(start), 6)), pct, notes: '',
       sortIndex: prev.workspaces.find(w => w.id === wsId)?.tasks.filter(x => x.lane === laneId).length ?? 0,
       boardBucket: null, statusId: initialStatusId, checklist: [], milestones: [],
     }
@@ -1335,6 +1335,21 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
       .filter(t => t.recurrenceParentId === taskId)
       .map(t => t.id)
     const removedIds = new Set<string>([taskId, ...recurrenceChildIds])
+    // Deleting a single occurrence shrinks its series: keep the template's
+    // count equal to what's actually left, so the editor ("Weekly · 6×") and
+    // any later re-generation of the series match what's on the Gantt. A series
+    // reduced to just the template stops repeating.
+    const seriesParent = prevTask?.recurrenceParentId
+      ? ws?.tasks.find(t => t.id === prevTask.recurrenceParentId)
+      : undefined
+    let parentUpdate: Task | undefined
+    if (seriesParent?.recurrence) {
+      const remaining = (ws?.tasks ?? []).filter(t => t.recurrenceParentId === seriesParent.id && t.id !== taskId).length + 1
+      const base = { ...seriesParent, dependencies: (seriesParent.dependencies ?? []).filter(d => d !== taskId) }
+      parentUpdate = remaining >= 2
+        ? { ...base, recurrence: { ...seriesParent.recurrence, count: remaining } }
+        : { ...base, recurrence: undefined }
+    }
     get().destructive(
       recurrenceChildIds.length ? `Deleted task + ${recurrenceChildIds.length} occurrence${recurrenceChildIds.length > 1 ? 's' : ''}` : 'Deleted task',
       () => {
@@ -1351,7 +1366,8 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
                         (t.dependencies ?? []).includes(taskId)
                           ? { ...t, dependencies: t.dependencies!.filter(d => d !== taskId) }
                           : t
-                      ),
+                      )
+                      .map(t => (parentUpdate && t.id === parentUpdate.id ? { ...t, recurrence: parentUpdate.recurrence } : t)),
                   }
                 : w
             ),
@@ -1370,6 +1386,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
         for (const dep of dependents) {
           fireAndForget(db.upsertTask(wsId, { ...dep, dependencies: (dep.dependencies ?? []).filter(d => d !== taskId) }), 'prune dependency')
         }
+        if (parentUpdate) fireAndForget(db.upsertTask(wsId, parentUpdate), 'update series count')
         // Delete generated occurrences alongside the template.
         for (const childId of recurrenceChildIds) {
           fireAndForget(db.deleteTask(childId) ?? Promise.resolve({ error: null }), 'delete recurrence child')
@@ -1424,6 +1441,19 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
   moveToBoardStatus: (wsId, statusId, taskId, markDone) => {
     const prev = get().data
     let updated: Task | undefined
+    // The board shows one card per recurring series, so completing that card
+    // completes every occurrence in the series, not just the one it stood for.
+    const wsBefore = prev.workspaces.find(x => x.id === wsId)
+    const seriesIds = new Set<string>([taskId])
+    if (markDone && wsBefore) {
+      const byId = new Map(wsBefore.tasks.map(t => [t.id, t]))
+      const dragged = byId.get(taskId)
+      if (dragged) {
+        const key = recurrenceSeriesKey(dragged, byId)
+        wsBefore.tasks.forEach(t => { if (recurrenceSeriesKey(t, byId) === key) seriesIds.add(t.id) })
+      }
+    }
+    const others: Task[] = []
     get().optimistic(
       () => set(s => ({
         data: {
@@ -1431,15 +1461,17 @@ export const usePlannerStore = create<PlannerStore>((set, get) => ({
           workspaces: s.data.workspaces.map(w => {
             if (w.id !== wsId) return w
             const tasks = w.tasks.map(t => {
-              if (t.id !== taskId) return t
-              updated = { ...t, statusId, boardBucket: null, ...(markDone ? { pct: 100 } : {}) }
-              return updated
+              if (!seriesIds.has(t.id)) return t
+              const next = { ...t, statusId, boardBucket: null, ...(markDone ? { pct: 100 } : {}) }
+              if (t.id === taskId) updated = next
+              else others.push(next)
+              return next
             })
             return { ...w, tasks }
           }),
         },
       })),
-      () => (updated ? [db.upsertTask(wsId, updated)] : []),
+      () => (updated ? [updated, ...others].map(t => db.upsertTask(wsId, t)) : []),
       { failMsg: 'Move failed — change reverted' },
     )
     const ws = prev.workspaces.find(x => x.id === wsId)

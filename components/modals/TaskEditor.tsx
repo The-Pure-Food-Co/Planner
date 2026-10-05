@@ -78,7 +78,10 @@ import type {
 import {
   avatarById,
   cn,
+  endFromLength,
   fd,
+  lengthFromRange,
+  type LengthUnit,
   RECUR_OPTIONS,
   todayD,
   uuid,
@@ -288,6 +291,17 @@ export default function TaskEditor({
     ws.lanes.find((l) => l.id === laneId)?.color;
 
   const patch = (p: Partial<Task>) => setT((prev) => ({ ...prev, ...p }));
+
+  // Length control state. Starts matching the task's current dates (whole weeks
+  // show as weeks, else days; new tasks default to weeks).
+  const initialLen = initial.noDate ? null : lengthFromRange(initial.start, initial.end);
+  const [lenText, setLenText] = useState(initialLen ? String(initialLen.n) : '');
+  const [lenUnit, setLenUnit] = useState<LengthUnit>(initialLen?.unit ?? 'weeks');
+  const applyLength = (text: string, unit: LengthUnit) => {
+    const n = Number(text);
+    if (t.noDate || !Number.isInteger(n) || n < 1 || n > 999) return;
+    patch({ end: endFromLength(t.start, n, unit) });
+  };
 
   // Linear-style property pill: compact, content-width, subtle border that
   // fills on hover/open. The icon + value carries the meaning, so no fixed width.
@@ -871,7 +885,7 @@ export default function TaskEditor({
                   }
                   placeholder="No fixed date"
                   clearLabel="No fixed date"
-                  onChange={(range) =>
+                  onChange={(range) => {
                     patch(
                       range
                         ? {
@@ -880,9 +894,64 @@ export default function TaskEditor({
                             end: range.end.toString(),
                           }
                         : { noDate: true }
-                    )
-                  }
+                    );
+                    // Picking dates overrides whatever length was typed.
+                    if (range) {
+                      const l = lengthFromRange(range.start.toString(), range.end.toString());
+                      setLenText(String(l.n));
+                      setLenUnit(l.unit);
+                    } else {
+                      setLenText('');
+                    }
+                  }}
                 />
+
+                {/* Length — the other way to set the end date. Typing a length
+                    moves the end date; picking dates above resets this to match. */}
+                <span
+                  className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground"
+                  title={t.noDate ? 'Set dates first' : 'Set the task length'}
+                >
+                  Length
+                  <input
+                    type="number"
+                    min={1}
+                    max={999}
+                    disabled={t.noDate}
+                    aria-label="Task length"
+                    value={lenText}
+                    onChange={(e) => {
+                      setLenText(e.target.value);
+                      applyLength(e.target.value, lenUnit);
+                    }}
+                    className="w-14 h-7 px-2 rounded-md border border-border bg-transparent outline-none text-foreground disabled:opacity-50"
+                  />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <button type="button" disabled={t.noDate} className={cn(triggerBase, 'disabled:opacity-50')}>
+                          <span className="capitalize">{lenUnit}</span>
+                          {chevron}
+                        </button>
+                      }
+                    />
+                    <DropdownMenuContent className="w-auto min-w-[8rem]">
+                      <DropdownMenuRadioGroup
+                        value={lenUnit}
+                        onValueChange={(v) => {
+                          setLenUnit(v as LengthUnit);
+                          applyLength(lenText, v as LengthUnit);
+                        }}
+                      >
+                        {(['days', 'weeks', 'months'] as const).map((u) => (
+                          <DropdownMenuRadioItem key={u} value={u} className="pl-2 capitalize">
+                            {u}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </span>
 
                 {/* Workstream — required to save, so it stays in the basic
                     view rather than behind Advanced options. */}
@@ -1057,7 +1126,7 @@ export default function TaskEditor({
                           <span className="inline-flex items-center gap-1.5 truncate text-muted-foreground">
                             <Repeat size={13} strokeWidth={1.75} />
                             {t.recurrence
-                              ? RECUR_LABEL[t.recurrence.freq]
+                              ? `${RECUR_LABEL[t.recurrence.freq]} · ${t.recurrence.count}×`
                               : 'Does not repeat'}
                           </span>
                           {chevron}
@@ -1101,18 +1170,37 @@ export default function TaskEditor({
                               type="number"
                               min={2}
                               max={52}
-                              value={t.recurrence.count}
+                              // Uncontrolled + commit on blur/Enter so the
+                              // field can be cleared and retyped; clamping on
+                              // every keystroke snapped it back to 2.
+                              defaultValue={t.recurrence.count}
                               onChange={(e) => {
+                                // Save in-range whole numbers as they're typed
+                                // (so closing the menu can't lose the value);
+                                // partial input like "1" is left alone.
+                                const n = Number(e.target.value);
+                                if (Number.isInteger(n) && n >= 2 && n <= 52 && n !== t.recurrence!.count) {
+                                  patch({ recurrence: { freq: t.recurrence!.freq, count: n } });
+                                }
+                              }}
+                              onBlur={(e) => {
                                 const n = Math.max(
                                   2,
-                                  Math.min(52, Number(e.target.value) || 2)
+                                  Math.min(52, Math.round(Number(e.target.value)) || 2)
                                 );
-                                patch({
-                                  recurrence: {
-                                    freq: t.recurrence!.freq,
-                                    count: n,
-                                  },
-                                });
+                                e.target.value = String(n);
+                                if (n !== t.recurrence!.count) {
+                                  patch({
+                                    recurrence: {
+                                      freq: t.recurrence!.freq,
+                                      count: n,
+                                    },
+                                  });
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === 'Enter') e.currentTarget.blur();
                               }}
                               className="w-16 h-7 px-2 rounded-md border border-border bg-transparent outline-none"
                             />
