@@ -27,7 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { cn, pd, uuid, wsStatuses, taskStatusId, taskMatchesSearch, mondayOf } from '@/lib/utils'
+import { cn, pd, uuid, wsStatuses, taskStatusId, taskMatchesSearch, mondayOf, groupRecurrenceSeries, pickSeriesRepresentative, recurrenceSeriesKey } from '@/lib/utils'
 import type { Workspace, Task, WorkflowState } from '@/lib/types'
 
 type BoardSort = 'manual' | 'week'
@@ -80,15 +80,40 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
     updateWorkspace({ ...ws, statuses: cols.filter(s => s.id !== sc.id) })
   }
 
+  const isDone = (t: Task) => !!cols.find(c => c.id === taskStatusId(t))?.isDone || (t.pct || 0) >= 100
+
   const tasks = useMemo(() => {
     let t = ws.tasks
     if (ui.person) t = t.filter(x => x.owner === ui.person)
     if (ui.stream) t = t.filter(x => x.lane === ui.stream)
     if (ui.todayOnly) t = t.filter(x => pd(x.start) <= today && pd(x.end) >= today)
     if (ui.search?.trim()) t = t.filter(x => taskMatchesSearch(x, ui.search, data.members))
-    return t
+    // One card per recurring series: show its next open occurrence (so the card
+    // moves on to the following one as each is finished) rather than a card for
+    // every repeat.
+    return groupRecurrenceSeries(t, ws.tasks).map(g =>
+      g.extras.length ? pickSeriesRepresentative([g.head, ...g.extras].filter(x => t.includes(x)), isDone) : g.head
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ws.tasks, ui.person, ui.stream, ui.todayOnly, ui.search])
+
+  // Progress for each series ("3/10 done"), keyed by every member's id.
+  const seriesProgress = useMemo(() => {
+    const byId = new Map(ws.tasks.map(t => [t.id, t]))
+    const groups = new Map<string, Task[]>()
+    for (const t of ws.tasks) {
+      const key = recurrenceSeriesKey(t, byId)
+      groups.set(key, [...(groups.get(key) ?? []), t])
+    }
+    const out = new Map<string, { total: number; done: number }>()
+    for (const members of groups.values()) {
+      if (members.length < 2) continue
+      const stat = { total: members.length, done: members.filter(isDone).length }
+      members.forEach(m => out.set(m.id, stat))
+    }
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ws.tasks, cols.map(c => c.id + c.isDone).join()])
 
   const taskMap = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks])
 
@@ -277,6 +302,11 @@ export default function Board({ ws, onOpenTask, onAddTask }: Props) {
               </span>
             )}
             {task.name}
+            {seriesProgress.get(task.id) && (
+              <span className="ml-1.5 text-[10px] text-muted-foreground whitespace-nowrap" title="Occurrences completed in this series">
+                {seriesProgress.get(task.id)!.done}/{seriesProgress.get(task.id)!.total} done
+              </span>
+            )}
           </p>
           {isCompleted && (
             <HugeiconsIcon icon={CheckmarkCircle02Icon} className="size-3.5 shrink-0 text-green-500" />

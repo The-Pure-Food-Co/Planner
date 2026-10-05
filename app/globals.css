@@ -1846,16 +1846,16 @@ main {
   opacity: 0.9;
 }
 .bar .grip.grip-left {
-  left: 2px;
+  left: -8px;
 }
 .bar .grip.grip-right {
-  right: 2px;
+  right: -8px;
 }
 .bar .grip.grip-pct {
   width: 12px;
   height: 12px;
   margin-top: -6px;
-  right: -6px;
+  right: 2px;
   border-radius: 3px;
   background: #fff;
   border: none;
@@ -1865,6 +1865,10 @@ main {
     transform 0.15s;
   transform: rotate(45deg);
   z-index: 3;
+}
+.bar .grip.grip-pct.grip-pct-near-start {
+  right: auto;
+  left: 4px;
 }
 .bar:hover .grip.grip-pct {
   opacity: 0.9;
@@ -3155,10 +3159,10 @@ textarea:not([data-astryx-theme] *) {
     border-radius: 3px;
   }
   .bar .grip.grip-left {
-    left: 1px;
+    left: -10px;
   }
   .bar .grip.grip-right {
-    right: 1px;
+    right: -10px;
   }
   /* Scrollbars are overlay on touch; keep them out of the layout. */
   ::-webkit-scrollbar {

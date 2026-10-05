@@ -405,6 +405,62 @@ export function recurrenceOccurrences(
   return out;
 }
 
+export type LengthUnit = 'days' | 'weeks' | 'months';
+
+// Task length is inclusive of both ends (start 6th + 5 days → ends 10th), same
+// as the date range picker and the Gantt bar widths.
+export function endFromLength(start: string, n: number, unit: LengthUnit): string {
+  const s = pd(start);
+  if (unit === 'days') return fd(addDays(s, n - 1));
+  if (unit === 'weeks') return fd(addDays(s, n * 7 - 1));
+  let d = s;
+  for (let i = 0; i < n; i++) d = stepRecurrence(d, 'monthly');
+  return fd(addDays(d, -1));
+}
+
+// Inverse for display: whole weeks read as weeks, anything else as days.
+export function lengthFromRange(start: string, end: string): { n: number; unit: LengthUnit } {
+  const days = daysBetween(pd(start), pd(end)) + 1;
+  return days > 0 && days % 7 === 0 ? { n: days / 7, unit: 'weeks' } : { n: Math.max(1, days), unit: 'days' };
+}
+
+// A recurring series is one template task plus the occurrences generated from
+// it (recurrenceParentId → template id). Views that draw one row/card per series
+// group tasks by this key. An occurrence whose template is gone (or isn't in
+// `byId`) is its own series, so it never disappears.
+export function recurrenceSeriesKey(t: Task, byId: Map<string, Task>): string {
+  return t.recurrenceParentId && byId.has(t.recurrenceParentId) ? t.recurrenceParentId : t.id;
+}
+
+// Collapse `visible` (already filtered) into one entry per series. `head` is the
+// template (even if a filter hid it, so the row keeps a stable identity);
+// `extras` are the visible occurrences to draw alongside it. Series keep the
+// order in which they first appear in `visible`.
+export function groupRecurrenceSeries(
+  visible: Task[],
+  all: Task[]
+): { head: Task; extras: Task[] }[] {
+  const byId = new Map(all.map((t) => [t.id, t]));
+  const groups = new Map<string, { head: Task; extras: Task[] }>();
+  for (const t of visible) {
+    const key = recurrenceSeriesKey(t, byId);
+    let g = groups.get(key);
+    if (!g) {
+      g = { head: byId.get(key) ?? t, extras: [] };
+      groups.set(key, g);
+    }
+    if (t.id !== g.head.id) g.extras.push(t);
+  }
+  return Array.from(groups.values());
+}
+
+// For single-card views (the board): the occurrence that best represents a
+// series right now — the earliest one not done, else the last one.
+export function pickSeriesRepresentative(members: Task[], isDone: (t: Task) => boolean): Task {
+  const byStart = members.slice().sort((a, b) => a.start.localeCompare(b.start));
+  return byStart.find((t) => !isDone(t)) ?? byStart[byStart.length - 1];
+}
+
 // Recurrence frequency options — shared by the task editor's Repeat pill and
 // the Gantt row-menu Repeat submenu so the labels stay in one place.
 export const RECUR_OPTIONS: { freq: 'weekly' | 'fortnightly' | 'monthly'; label: string }[] = [

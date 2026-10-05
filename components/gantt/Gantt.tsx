@@ -10,6 +10,7 @@ import {
   dependencyChainIds,
   fd,
   fmtShort,
+  groupRecurrenceSeries,
   mondayOf,
   pd,
   RECUR_OPTIONS,
@@ -431,12 +432,19 @@ function GanttBar({
           width: `${task.pct || 0}%`,
         }}
       >
-        {(task.pct || dragPct !== null) && (
+        {(!task.noDate || !!task.pct || dragPct !== null) && (
           <Tooltip
             content={dragPct !== null ? `${dragPct}%` : 'Drag to set progress'}
             open={dragPct !== null ? true : undefined}
           >
-            <span className="grip grip-pct" />
+            {/* Always present, so progress can be started from 0%. While the
+                fill is too narrow to clear the left resize grip, the handle
+                sits just inside the bar instead of on the fill's edge. */}
+            <span
+              className={`grip grip-pct${
+                dragPct === null && ((task.pct || 0) / 100) * w < 16 ? ' grip-pct-near-start' : ''
+              }`}
+            />
           </Tooltip>
         )}
       </div>
@@ -1056,6 +1064,15 @@ export default function Gantt({
       );
     if (taskFilter === 'active') tasks = tasks.filter((t) => !isTaskDone(t));
     if (taskFilter === 'done') tasks = tasks.filter((t) => isTaskDone(t));
+    // A recurring series is one row: the template owns the row and its
+    // occurrences are drawn as extra bars on it. `barTasks` is every visible
+    // task (for the lane summary); `tasks` is just the row owners.
+    const barTasks = tasks;
+    const series = groupRecurrenceSeries(tasks, ws.tasks);
+    const extrasByHead = new Map(series.map((g) => [g.head.id, g.extras]));
+    tasks = series
+      .map((g) => g.head)
+      .sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
     visibleTaskCount += tasks.length;
     if (anyFilter && !tasks.length) return;
     const isCol = collapsed.has(lane.id);
@@ -1179,18 +1196,18 @@ export default function Gantt({
         onDragLeave={laneOnDragLeave}
         onDrop={laneOnDrop}
       >
-        {tasks.length > 0 &&
+        {barTasks.length > 0 &&
           (() => {
             const todayStr = fd(today);
             const effS = (t: Task) => (t.noDate ? todayStr : t.start);
             const effE = (t: Task) => (t.noDate ? todayStr : t.end);
-            const s = tasks.reduce(
+            const s = barTasks.reduce(
               (a, t) => (a < effS(t) ? a : effS(t)),
-              effS(tasks[0])
+              effS(barTasks[0])
             );
-            const e = tasks.reduce(
+            const e = barTasks.reduce(
               (a, t) => (a > effE(t) ? a : effE(t)),
-              effE(tasks[0])
+              effE(barTasks[0])
             );
             const lx = daysBetween(r0, pd(s)) * dw;
             const lw = Math.max(dw, (daysBetween(pd(s), pd(e)) + 1) * dw);
@@ -1207,10 +1224,10 @@ export default function Gantt({
                   {fmtShort(s)} → {fmtShort(e)}
                 </span>
                 {(() => {
-                  const est = tasks.reduce((a, t) => a + (t.estimate || 0), 0);
+                  const est = barTasks.reduce((a, t) => a + (t.estimate || 0), 0);
                   return est > 0 ? <span>{est} est</span> : null;
                 })()}
-                <span>{avgPct(tasks)}%</span>
+                <span>{avgPct(barTasks)}%</span>
               </div>
             );
           })()}
@@ -1730,6 +1747,29 @@ export default function Gantt({
               onLiveMove={onLiveMove}
               onLiveMoveEnd={onLiveMoveEnd}
             />
+            {(extrasByHead.get(t.id) ?? []).map((o) => {
+              const oDone = isTaskDone(o);
+              return (
+                <GanttBar
+                  key={o.id}
+                  task={o}
+                  lane={lane}
+                  ws={ws}
+                  members={data.members}
+                  dw={dw}
+                  r0={r0}
+                  onOpenTask={() => onOpenTask(ws.id, o)}
+                  onUpdate={(updated, undoToast) => updateTask(ws.id, updated, undoToast)}
+                  onMove={(delta) => moveTaskWithDependents(ws.id, o.id, delta)}
+                  onToast={toast}
+                  status={oDone ? 'done' : !o.noDate && pd(o.end) < today ? 'overdue' : 'active'}
+                  disabled={!canEdit}
+                  registerEl={registerBarEl}
+                  onLiveMove={onLiveMove}
+                  onLiveMoveEnd={onLiveMoveEnd}
+                />
+              );
+            })}
             <OffscreenNudge
               x1={x}
               x2={x + w}
